@@ -1,14 +1,5 @@
-import { TaskStatus, type Project, type Stage } from '@/lib/types';
-
-const stageLabels: Record<string, string> = {
-  ppo: 'ППО',
-  design: 'Проектирование',
-  supply: 'Поставка',
-  smrPnr: 'СМР / ПНР',
-  metrology: 'Метрология',
-  algorithm: 'Алгоритм',
-  poverka: 'Поверка',
-};
+import { stageLabels } from '@/lib/stages';
+import { TaskStatus, type Project, type Stage, type Stages } from '@/lib/types';
 
 export const statusStyles: Record<
   TaskStatus,
@@ -141,7 +132,7 @@ export function ProjectGantt({ project }: { project: Project }) {
           >
             <div className='min-w-0'>
               <p className='truncate text-sm font-medium'>
-                {stageLabels[key] ?? prettify(key)}
+                {stageLabels[key as keyof Stages] ?? prettify(key)}
               </p>
               <p className='text-xs text-neutral-400 dark:text-neutral-500'>
                 {stage.duration} дн. · {Math.round(progress * 100)}%
