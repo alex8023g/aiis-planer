@@ -1,0 +1,55 @@
+'use server';
+
+import { revalidatePath } from 'next/cache';
+
+import type { SubtaskKey } from '@/generated/prisma/enums';
+import { prisma } from '@/lib/prisma';
+import { stageKeys, stageSubtaskKeys } from '@/lib/stages';
+import type { NewProjectFormFields } from '@/lib/stages';
+import { TaskStatus } from '@/lib/types';
+
+export type CreateProjectResult =
+  { ok: true; id: string } | { ok: false; error: string };
+
+export async function createProject(
+  fields: NewProjectFormFields,
+): Promise<CreateProjectResult> {
+  const name = fields.name.trim();
+  const responsible = fields.responsible.trim();
+
+  if (!name || !fields.dateStart) {
+    return { ok: false, error: 'Заполните название и дату начала' };
+  }
+
+  const includedStages = stageKeys.filter((key) => fields.stages[key].include);
+
+  if (includedStages.length === 0) {
+    return { ok: false, error: 'Выберите хотя бы один этап' };
+  }
+
+  const project = await prisma.project.create({
+    data: {
+      name,
+      responsible: responsible || null,
+      dateStart: new Date(`${fields.dateStart}T00:00:00.000Z`),
+      stages: {
+        create: includedStages.map((key) => ({
+          kind: key,
+          duration: fields.stages[key].duration,
+          subtasks: {
+            create: stageSubtaskKeys[key].map((subtaskKey, position) => ({
+              key: subtaskKey as SubtaskKey,
+              status: TaskStatus.NotStarted,
+              position,
+            })),
+          },
+        })),
+      },
+    },
+    select: { id: true },
+  });
+
+  revalidatePath('/');
+
+  return { ok: true, id: project.id };
+}

@@ -1,0 +1,107 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Значения совпадают со строками enum TaskStatus в src/lib/types.ts.
+enum TaskStatus {
+  not_started
+  in_progress
+  completed
+}
+
+/// Ключи этапов из типа Stages в src/lib/types.ts.
+enum StageKind {
+  ppo
+  design
+  supply
+  smrPnr
+  poverka
+  algorithm
+  metrology
+}
+
+/// Ключи подзадач всех этапов (см. Stages в src/lib/types.ts).
+enum SubtaskKey {
+  // ppo
+  dogovor
+  dopusk
+  visit
+  summary
+  specification
+  xml20000
+  report
+  // design
+  tz
+  rd
+  td
+  // supply
+  request
+  received
+  assembled
+  sent
+  delivered
+  // smrPnr
+  allWorks
+  // poverka
+  arshin
+  // algorithm
+  sendTask
+  done
+  // metrology
+  documents
+  vniims
+  rosstandart
+  poverkaAiis
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  /// Дата начала проекта, без времени.
+  dateStart   DateTime @db.Date
+  responsible String?
+  stages      Stage[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// Этап проекта. Отсутствие строки = этап не входит в проект (null в Stages).
+model Stage {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind      StageKind
+  /// Длительность в днях.
+  duration  Int
+  subtasks  Subtask[]
+
+  /// startAfter: этап начинается после завершения подзадачи другого этапа.
+  startAfterStageId String?
+  startAfterStage   Stage?      @relation("StageDependency", fields: [startAfterStageId], references: [id], onDelete: SetNull)
+  startAfterSubtask SubtaskKey?
+  dependents        Stage[]     @relation("StageDependency")
+
+  @@unique([projectId, kind])
+  @@index([startAfterStageId])
+}
+
+/// Подзадача этапа. status = null — подзадача неприменима к проекту.
+model Subtask {
+  id       String      @id @default(cuid())
+  stageId  String
+  stage    Stage       @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  key      SubtaskKey
+  status   TaskStatus?
+  /// Порядок отображения внутри этапа.
+  position Int
+
+  @@unique([stageId, key])
+}

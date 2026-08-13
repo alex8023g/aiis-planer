@@ -16,6 +16,21 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## База данных
+
+Prisma 7 + PostgreSQL. Строка подключения — `DATABASE_URL` в `.env` (шаблон в `.env.example`).
+
+```bash
+cp .env.example .env   # и указать свой DATABASE_URL
+npm run db:migrate     # применить миграции (создаст БД, если её нет)
+npm run db:seed        # залить демо-проекты
+npm run db:studio      # Prisma Studio
+```
+
+После изменения `prisma/schema.prisma` нужно выполнить `npm run db:migrate`
+(в проде — `npm run db:deploy`); клиент генерируется в `src/generated/prisma`
+и в git не коммитится, поэтому после `npm ci` запустите `npm run db:generate`.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

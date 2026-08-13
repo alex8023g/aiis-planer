@@ -1,0 +1,13 @@
+# Сгенерированный Prisma Client
+/src/generated
+
+# Скиллы Prisma для агентов
+/.agents
+/.claude
+/.windsurf
+skills-lock.json
+
+# Сборка и зависимости
+/.next
+/node_modules
+package-lock.json

@@ -12,6 +12,25 @@ export const stageLabels: Record<keyof Stages, string> = {
 
 export const stageKeys = Object.keys(stageLabels) as (keyof Stages)[];
 
+/// Подзадачи каждого этапа в порядке отображения (см. Stages в @/lib/types).
+export const stageSubtaskKeys: Record<keyof Stages, string[]> = {
+  ppo: [
+    'dogovor',
+    'dopusk',
+    'visit',
+    'summary',
+    'specification',
+    'xml20000',
+    'report',
+  ],
+  design: ['tz', 'rd', 'td'],
+  supply: ['request', 'received', 'assembled', 'sent', 'delivered'],
+  smrPnr: ['dopusk', 'visit', 'allWorks'],
+  poverka: ['dogovor', 'dopusk', 'visit', 'arshin'],
+  algorithm: ['sendTask', 'done'],
+  metrology: ['documents', 'vniims', 'rosstandart', 'poverkaAiis'],
+};
+
 export type NewProjectFormFields = {
   name: string;
   responsible: string;

@@ -24,15 +24,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { newProjectFormFields, stageKeys, stageLabels } from '@/lib/stages';
 import type { Stages } from '@/lib/types';
-import { useState, type SubmitEvent } from 'react';
+import { createProject } from '@/app/actions';
+import { useState, useTransition, type SubmitEvent } from 'react';
 
 export function AddProjectDialog() {
+  const [open, setOpen] = useState(false);
   const [formState, setFormState] = useState(newProjectFormFields);
   const [errors, setErrors] = useState({
     name: false,
     responsible: false,
     dateStart: false,
   });
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -45,6 +49,17 @@ export function AddProjectDialog() {
     if (Object.values(nextErrors).some(Boolean)) {
       return;
     }
+
+    setSubmitError(null);
+    startTransition(async () => {
+      const result = await createProject(formState);
+      if (!result.ok) {
+        setSubmitError(result.error);
+        return;
+      }
+      setFormState(newProjectFormFields);
+      setOpen(false);
+    });
   }
 
   function updateField(key: keyof typeof errors, value: string) {
@@ -63,7 +78,7 @@ export function AddProjectDialog() {
   }
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={<Button variant='outline'>Открыть Диалог</Button>}
       />
@@ -162,8 +177,15 @@ export function AddProjectDialog() {
             </FieldSet>
           </FieldGroup>
           <DialogFooter>
+            {submitError && (
+              <p className='mr-auto self-center text-sm text-destructive'>
+                {submitError}
+              </p>
+            )}
             <DialogClose render={<Button variant='outline'>Отмена</Button>} />
-            <Button type='submit'>Сохранить</Button>
+            <Button type='submit' disabled={isPending}>
+              {isPending ? 'Сохранение…' : 'Сохранить'}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
