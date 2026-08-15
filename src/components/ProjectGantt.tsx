@@ -161,7 +161,7 @@ export function ProjectGantt({
             {totalDuration} дн. (Σ {totalWork} дн.) ·{' '}
             {Math.round(totalProgress * 100)}%
           </p>
-          <ProjectMenu projectId={project.id} projectName={project.name} />
+          <ProjectMenu project={project} />
         </div>
       </div>
 

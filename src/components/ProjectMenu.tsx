@@ -3,7 +3,8 @@
 import { EllipsisVertical, Pencil, Trash2 } from 'lucide-react';
 import { useState, useTransition } from 'react';
 
-import { deleteProject } from '@/app/actions';
+import { deleteProject, updateProject } from '@/app/actions';
+import { ProjectDialog } from '@/components/ProjectDialog';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -11,25 +12,27 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { projectToFormFields } from '@/lib/stages';
+import type { NewProjectFormFields } from '@/lib/stages';
+import type { Project } from '@/lib/types';
 
-export function ProjectMenu({
-  projectId,
-  projectName,
-}: {
-  projectId: string;
-  projectName: string;
-}) {
+export function ProjectMenu({ project }: { project: Project }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   function handleDelete() {
-    if (!window.confirm(`Удалить проект «${projectName}»?`)) return;
+    if (!window.confirm(`Удалить проект «${project.name}»?`)) return;
 
     setError(null);
     startTransition(async () => {
-      const result = await deleteProject(projectId);
+      const result = await deleteProject(project.id);
       if (!result.ok) setError(result.error);
     });
+  }
+
+  function handleUpdate(fields: NewProjectFormFields) {
+    return updateProject(project.id, fields);
   }
 
   return (
@@ -49,8 +52,7 @@ export function ProjectMenu({
           }
         />
         <DropdownMenuContent align='end'>
-          {/* TODO: диалог редактирования проекта пока не реализован. */}
-          <DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setEditOpen(true)}>
             <Pencil />
             Редактировать
           </DropdownMenuItem>
@@ -60,6 +62,15 @@ export function ProjectMenu({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <ProjectDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        title={`Редактирование: ${project.name}`}
+        submitLabel='Сохранить'
+        initialValues={projectToFormFields(project)}
+        onSubmit={handleUpdate}
+      />
     </div>
   );
 }
