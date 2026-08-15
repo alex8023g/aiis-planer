@@ -21,6 +21,12 @@ export async function createProject(
     return { ok: false, error: 'Заполните название и дату начала' };
   }
 
+  const duration = Math.trunc(fields.duration);
+
+  if (!Number.isFinite(duration) || duration < 1) {
+    return { ok: false, error: 'Укажите длительность проекта' };
+  }
+
   const includedStages = stageKeys.filter((key) => fields.stages[key].include);
 
   if (includedStages.length === 0) {
@@ -32,6 +38,7 @@ export async function createProject(
       name,
       responsible: responsible || null,
       dateStart: new Date(`${fields.dateStart}T00:00:00.000Z`),
+      duration,
       stages: {
         create: includedStages.map((key) => ({
           kind: key,

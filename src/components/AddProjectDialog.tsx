@@ -34,6 +34,7 @@ export function AddProjectDialog() {
     name: false,
     responsible: false,
     dateStart: false,
+    duration: false,
   });
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -44,6 +45,7 @@ export function AddProjectDialog() {
       name: formState.name.trim() === '',
       responsible: formState.responsible.trim() === '',
       dateStart: formState.dateStart === '',
+      duration: !Number.isFinite(formState.duration) || formState.duration < 1,
     };
     setErrors(nextErrors);
     if (Object.values(nextErrors).some(Boolean)) {
@@ -62,9 +64,17 @@ export function AddProjectDialog() {
     });
   }
 
-  function updateField(key: keyof typeof errors, value: string) {
+  function updateField(
+    key: 'name' | 'responsible' | 'dateStart',
+    value: string,
+  ) {
     setFormState((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => ({ ...prev, [key]: false }));
+  }
+
+  function updateDuration(value: number) {
+    setFormState((prev) => ({ ...prev, duration: value }));
+    setErrors((prev) => ({ ...prev, duration: false }));
   }
 
   function updateStage(
@@ -133,6 +143,21 @@ export function AddProjectDialog() {
                 }
               />
               {/* <FieldError>{errors.dateStart && 'Укажите дату начала'}</FieldError> */}
+            </Field>
+            <Field data-invalid={errors.duration}>
+              <Label htmlFor='project-duration'>Длительность, р.д.</Label>
+              <Input
+                id='project-duration'
+                name='duration'
+                type='number'
+                min={1}
+                aria-invalid={errors.duration}
+                value={formState.duration}
+                onChange={(event) =>
+                  updateDuration(event.target.valueAsNumber || 0)
+                }
+              />
+              {/* <FieldError>{errors.duration && 'Укажите длительность'}</FieldError> */}
             </Field>
 
             <FieldSeparator />

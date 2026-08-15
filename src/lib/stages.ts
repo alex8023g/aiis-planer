@@ -35,6 +35,8 @@ export type NewProjectFormFields = {
   name: string;
   responsible: string;
   dateStart: string;
+  /// Длительность проекта в рабочих днях.
+  duration: number;
   stages: Record<keyof Stages, { include: boolean; duration: number }>;
 };
 
@@ -42,6 +44,7 @@ export const newProjectFormFields: NewProjectFormFields = {
   name: '',
   responsible: '',
   dateStart: '',
+  duration: 65,
   stages: {
     ppo: { include: true, duration: 21 },
     design: { include: false, duration: 30 },
