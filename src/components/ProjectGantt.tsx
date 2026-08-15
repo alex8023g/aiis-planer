@@ -2,6 +2,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import dayOfYear from 'dayjs/plugin/dayOfYear';
 import utc from 'dayjs/plugin/utc';
 
+import { ProjectMenu } from '@/components/ProjectMenu';
 import { stageLabels } from '@/lib/stages';
 import { TaskStatus, type Project, type Stage, type Stages } from '@/lib/types';
 
@@ -155,10 +156,13 @@ export function ProjectGantt({
           {' - '}
           {project.duration} {'р.д.'}
         </h2>
-        <p className='shrink-0 text-sm text-neutral-500 dark:text-neutral-400'>
-          {totalDuration} дн. (Σ {totalWork} дн.) ·{' '}
-          {Math.round(totalProgress * 100)}%
-        </p>
+        <div className='flex shrink-0 items-center gap-2'>
+          <p className='text-sm text-neutral-500 dark:text-neutral-400'>
+            {totalDuration} дн. (Σ {totalWork} дн.) ·{' '}
+            {Math.round(totalProgress * 100)}%
+          </p>
+          <ProjectMenu projectId={project.id} projectName={project.name} />
+        </div>
       </div>
 
       <div className='/h-9 /border mb-4'>

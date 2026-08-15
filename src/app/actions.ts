@@ -11,6 +11,8 @@ import { TaskStatus } from '@/lib/types';
 export type CreateProjectResult =
   { ok: true; id: string } | { ok: false; error: string };
 
+export type DeleteProjectResult = { ok: true } | { ok: false; error: string };
+
 export async function createProject(
   fields: NewProjectFormFields,
 ): Promise<CreateProjectResult> {
@@ -59,4 +61,17 @@ export async function createProject(
   revalidatePath('/');
 
   return { ok: true, id: project.id };
+}
+
+/// Этапы и подзадачи удаляются каскадом (см. onDelete: Cascade в schema.prisma).
+export async function deleteProject(id: string): Promise<DeleteProjectResult> {
+  const deleted = await prisma.project.deleteMany({ where: { id } });
+
+  if (deleted.count === 0) {
+    return { ok: false, error: 'Проект не найден' };
+  }
+
+  revalidatePath('/');
+
+  return { ok: true };
 }
