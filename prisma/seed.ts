@@ -12,6 +12,7 @@ const projects: Project[] = [
     name: 'Дубки',
     responsible: 'Петров П.П.',
     dateStart: '2025-08-10',
+    duration: 65,
     stages: {
       ppo: {
         duration: 15,
@@ -56,6 +57,7 @@ const projects: Project[] = [
     name: 'Цементум волга',
     responsible: null,
     dateStart: '2025-08-10',
+    duration: 143,
     stages: {
       ppo: {
         duration: 18,
@@ -144,12 +146,14 @@ async function seedProject(project: Project) {
     update: {
       name: project.name,
       responsible: project.responsible,
+      duration: project.duration,
       dateStart,
     },
     create: {
       id: project.id,
       name: project.name,
       responsible: project.responsible,
+      duration: project.duration,
       dateStart,
     },
   });

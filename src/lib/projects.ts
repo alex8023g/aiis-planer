@@ -47,6 +47,7 @@ export async function getProjects(): Promise<Project[]> {
       id: row.id,
       name: row.name,
       responsible: row.responsible,
+      duration: row.duration,
       dateStart: toDateString(row.dateStart),
       stages: stages as Stages,
     };

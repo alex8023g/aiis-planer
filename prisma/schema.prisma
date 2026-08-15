@@ -67,6 +67,8 @@ model Project {
   name        String
   /// Дата начала проекта, без времени.
   dateStart   DateTime @db.Date
+  /// Длительность в днях.
+  duration    Int      @default(0)
   responsible String?
   stages      Stage[]
   createdAt   DateTime @default(now())
@@ -104,4 +106,13 @@ model Subtask {
   position Int
 
   @@unique([stageId, key])
+}
+
+model IsDayOff {
+  year      Int      @id
+  days      String
+  createdAt DateTime @default(now())
+
+  @@unique([year])
+  @@map("is_day_off")
 }

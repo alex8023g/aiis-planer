@@ -1,3 +1,5 @@
+import type { ProjectModel } from '@/generated/prisma/models';
+
 export enum TaskStatus {
   NotStarted = 'not_started',
   InProgress = 'in_progress',
@@ -105,10 +107,13 @@ export type Stages = {
     | undefined;
 };
 
-export type Project = {
-  id: string;
-  name: string;
+/// Скалярные поля берём из схемы Prisma, чтобы они не расходились.
+/// Переопределяем только то, что в UI устроено иначе: дата как строка и
+/// этапы как объект с фиксированными ключами вместо массива Stage[].
+export type Project = Omit<
+  ProjectModel,
+  'dateStart' | 'createdAt' | 'updatedAt'
+> & {
   dateStart: `${number}-${number}-${number}`;
-  responsible: string | null;
   stages: Stages;
 };

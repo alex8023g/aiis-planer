@@ -1,5 +1,6 @@
 import { AddProjectDialog } from '@/components/AddProjectDialog';
 import { ProjectGantt, statusStyles } from '@/components/ProjectGantt';
+import { getDaysOff } from '@/lib/dayoff';
 import { getProjects } from '@/lib/projects';
 import { TaskStatus } from '@/lib/types';
 
@@ -7,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function Home() {
   const projects = await getProjects();
-
+  const isDaysOff = await getDaysOff();
   return (
     <div className='min-h-screen bg-neutral-50 p-6 text-neutral-900 sm:p-10 dark:bg-neutral-950 dark:text-neutral-100'>
       <main className='/max-w-4xl mx-auto'>
@@ -23,7 +24,11 @@ export default async function Home() {
 
         <div className='flex flex-col gap-6'>
           {projects.map((project) => (
-            <ProjectGantt key={project.id} project={project} />
+            <ProjectGantt
+              key={project.id}
+              project={project}
+              daysOff={isDaysOff}
+            />
           ))}
         </div>
 

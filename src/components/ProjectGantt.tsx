@@ -1,3 +1,7 @@
+import dayjs, { type Dayjs } from 'dayjs';
+import dayOfYear from 'dayjs/plugin/dayOfYear';
+import utc from 'dayjs/plugin/utc';
+
 import { stageLabels } from '@/lib/stages';
 import { TaskStatus, type Project, type Stage, type Stages } from '@/lib/types';
 
@@ -33,6 +37,39 @@ function prettify(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+dayjs.extend(utc);
+dayjs.extend(dayOfYear);
+
+/// В календаре isdayoff.ru '1' — выходной, остальные цифры ('0' рабочий,
+/// '2' сокращённый) считаем рабочим днём. Дни вне календарного года календарём
+/// не покрыты, поэтому считаем их рабочими.
+function isWorkday(
+  date: Dayjs,
+  daysOff: string,
+  calendarYear: number,
+): boolean {
+  if (date.year() !== calendarYear) return true;
+  return daysOff[date.dayOfYear() - 1] !== '1';
+}
+
+/// Сколько рабочих дней проекта уже прошло: от dateStart (день 1) до сегодня
+/// включительно, выходные по календарю не в счёт. Даты берём в UTC, чтобы
+/// часовой пояс не сдвигал результат.
+function elapsedDays(dateStart: Project['dateStart'], daysOff: string): number {
+  const start = dayjs.utc(dateStart);
+  if (!start.isValid()) return 0;
+
+  const today = dayjs.utc(dayjs().format('YYYY-MM-DD'));
+  const calendarYear = today.year();
+
+  let count = 0;
+  for (let day = start; !day.isAfter(today); day = day.add(1, 'day')) {
+    if (isWorkday(day, daysOff, calendarYear)) count += 1;
+  }
+
+  return count;
+}
+
 function subtaskEndOffset(
   stageOffset: number,
   stage: Stage,
@@ -47,7 +84,14 @@ function subtaskEndOffset(
   return stageOffset + (index + 1) * share;
 }
 
-export function ProjectGantt({ project }: { project: Project }) {
+export function ProjectGantt({
+  project,
+  daysOff,
+}: {
+  project: Project;
+  /// Календарь выходных текущего года из isdayoff.ru (см. lib/dayoff.ts).
+  daysOff: string;
+}) {
   // Widen the per-stage literal types to the common Stage shape so the
   // scheduling code below can treat every stage uniformly.
   const stageEntries: [string, Stage | null | undefined][] = Object.entries(
@@ -92,6 +136,11 @@ export function ProjectGantt({ project }: { project: Project }) {
     return { key, stage, offset: offsets[key], subtasks, progress };
   });
 
+  const passedDays = Math.min(
+    elapsedDays(project.dateStart, daysOff),
+    project.duration,
+  );
+
   const totalWork = rows.reduce((sum, r) => sum + r.stage.duration, 0);
   const totalProgress =
     rows.reduce((sum, r) => sum + r.progress * r.stage.duration, 0) / totalWork;
@@ -101,8 +150,10 @@ export function ProjectGantt({ project }: { project: Project }) {
       <div className='mb-4 flex items-baseline justify-between gap-4'>
         <h2 className='text-lg font-semibold tracking-tight'>
           {project.name} {project.responsible && `- ${project.responsible} `}
-          {'- '}
+          {' - '}
           {project.dateStart}
+          {' - '}
+          {project.duration} {'р.д.'}
         </h2>
         <p className='shrink-0 text-sm text-neutral-500 dark:text-neutral-400'>
           {totalDuration} дн. (Σ {totalWork} дн.) ·{' '}
@@ -113,18 +164,22 @@ export function ProjectGantt({ project }: { project: Project }) {
       <div className='/h-9 /border mb-4'>
         <div className='inset-y-0 ml-36 flex gap-px overflow-hidden rounded-md border'>
           {/* totalDuration line */}
-          <div className='/mb-4 /border flex w-full gap-px'>
-            {Array.from({ length: totalDuration }, (_, i) => (
+          <div className='flex w-full gap-px'>
+            {Array.from({ length: project.duration }, (_, i) => (
               <div
                 key={i}
-                className='h-3 flex-1 rounded-sm bg-neutral-200 dark:bg-neutral-800'
+                className={`h-3 flex-1 rounded-sm ${
+                  i < passedDays
+                    ? 'bg-red-500'
+                    : 'bg-neutral-200 dark:bg-neutral-800'
+                }`}
               />
             ))}
           </div>
         </div>
       </div>
 
-      <div className='flex flex-col gap-4'>
+      <div className='flex flex-col gap-2'>
         {rows.map(({ key, stage, offset, subtasks, progress }) => (
           <div
             key={key}
@@ -139,12 +194,12 @@ export function ProjectGantt({ project }: { project: Project }) {
               </p>
             </div>
 
-            <div className='relative h-9'>
+            <div className='relative h-5'>
               <div
                 className='absolute inset-y-0 flex gap-px overflow-hidden rounded-md'
                 style={{
-                  left: `${(offset / totalDuration) * 100}%`,
-                  width: `${(stage.duration / totalDuration) * 100}%`,
+                  left: `${(offset / project.duration) * 100}%`,
+                  width: `${(stage.duration / project.duration) * 100}%`,
                 }}
               >
                 {subtasks.map(([name, status]) => (
