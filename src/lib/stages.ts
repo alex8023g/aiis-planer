@@ -30,9 +30,9 @@ export const stageSubtaskKeys: Record<keyof Stages, string[]> = {
   ],
   design: ['tz', 'rd', 'td'],
   supply: ['request', 'received', 'assembled', 'sent', 'delivered'],
-  smrPnr: ['dopusk', 'visit', 'allWorks'],
+  smrPnr: ['dogovor', 'dopusk', 'visit', 'allWorks'],
   poverka: ['dogovor', 'dopusk', 'visit', 'arshin'],
-  algorithm: ['sendTask', 'done'],
+  algorithm: ['collectData', 'sendTask', 'done'],
   metrology: ['documents', 'vniims', 'rosstandart', 'poverkaAiis'],
 };
 
@@ -62,6 +62,7 @@ export const subtaskLabels: Record<string, string> = {
   // poverka
   arshin: 'Аршин',
   // algorithm
+  collectData: 'Сбор данных',
   sendTask: 'Задание отправлено',
   done: 'Выполнено',
   // metrology

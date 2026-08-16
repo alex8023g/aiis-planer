@@ -53,6 +53,7 @@ enum SubtaskKey {
   // poverka
   arshin
   // algorithm
+  collectData
   sendTask
   done
   // metrology

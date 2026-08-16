@@ -41,6 +41,7 @@ const projects: Project[] = [
         duration: 30,
         startAfter: { stage: 'supply', subtask: 'delivered' },
         subtasks: {
+          dogovor: TaskStatus.NotStarted,
           dopusk: TaskStatus.NotStarted,
           visit: TaskStatus.NotStarted,
           allWorks: TaskStatus.NotStarted,
@@ -95,6 +96,7 @@ const projects: Project[] = [
         duration: 28,
         startAfter: { stage: 'design', subtask: 'td' },
         subtasks: {
+          dogovor: TaskStatus.NotStarted,
           dopusk: TaskStatus.NotStarted,
           visit: TaskStatus.NotStarted,
           allWorks: TaskStatus.NotStarted,
@@ -114,6 +116,7 @@ const projects: Project[] = [
         duration: 15,
         startAfter: { stage: 'ppo', subtask: 'summary' },
         subtasks: {
+          collectData: TaskStatus.NotStarted,
           sendTask: TaskStatus.NotStarted,
           done: TaskStatus.NotStarted,
         },

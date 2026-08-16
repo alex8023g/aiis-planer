@@ -61,6 +61,7 @@ export type Stages = {
         duration: number;
         startAfter: Dependency;
         subtasks: {
+          dogovor: TaskStatus;
           dopusk: TaskStatus;
           visit: TaskStatus;
           allWorks: TaskStatus;
@@ -86,6 +87,7 @@ export type Stages = {
         duration: number;
         startAfter: Dependency;
         subtasks: {
+          collectData: TaskStatus;
           sendTask: TaskStatus;
           done: TaskStatus;
         };
