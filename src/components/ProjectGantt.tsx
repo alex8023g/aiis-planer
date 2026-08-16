@@ -71,6 +71,33 @@ function elapsedDays(dateStart: Project['dateStart'], daysOff: string): number {
   return count;
 }
 
+/// Дата окончания: день, на который приходится duration-й рабочий день, считая
+/// dateStart первым. Календарь тот же, что и в elapsedDays, поэтому дни за
+/// пределами его года считаются рабочими.
+function finishDate(
+  dateStart: Project['dateStart'],
+  duration: number,
+  daysOff: string,
+): string | null {
+  const start = dayjs.utc(dateStart);
+  if (!start.isValid() || duration < 1) return null;
+
+  const calendarYear = dayjs.utc(dayjs().format('YYYY-MM-DD')).year();
+
+  let count = 0;
+  let day = start;
+  /// Запас на выходные: рабочих дней в неделе минимум пять из семи.
+  const limit = duration * 3 + 14;
+
+  for (let i = 0; i < limit; i += 1) {
+    if (isWorkday(day, daysOff, calendarYear)) count += 1;
+    if (count >= duration) return day.format('YYYY-MM-DD');
+    day = day.add(1, 'day');
+  }
+
+  return null;
+}
+
 function subtaskEndOffset(
   stageOffset: number,
   stage: Stage,
@@ -118,7 +145,9 @@ export function ProjectGantt({
       }
     }
     offsets[key] = offset;
-    elapsed = offset + stage.duration;
+    // Max, not assignment: a stage that starts early via startAfter must not
+    // pull the following stages back before the chain's real end.
+    elapsed = Math.max(elapsed, offset + stage.duration);
   }
 
   const totalDuration = stages.reduce(
@@ -142,6 +171,10 @@ export function ProjectGantt({
     project.duration,
   );
 
+  const dateFinish = finishDate(project.dateStart, project.duration, daysOff);
+  /// passedDays уже ограничен project.duration, поэтому остаток не уходит в минус.
+  const daysLeft = project.duration - passedDays;
+
   const totalWork = rows.reduce((sum, r) => sum + r.stage.duration, 0);
   const totalProgress =
     rows.reduce((sum, r) => sum + r.progress * r.stage.duration, 0) / totalWork;
@@ -153,8 +186,11 @@ export function ProjectGantt({
           {project.name} {project.responsible && `- ${project.responsible} `}
           {' - '}
           {project.dateStart}
+          {dateFinish && ` - ${dateFinish}`}
           {' - '}
           {project.duration} {'р.д.'}
+          {' - '}
+          осталось {daysLeft} {'р.д.'}
         </h2>
         <div className='flex shrink-0 items-center gap-2'>
           <p className='text-sm text-neutral-500 dark:text-neutral-400'>

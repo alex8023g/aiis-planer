@@ -1,4 +1,9 @@
-import { TaskStatus, type Project, type Stages } from '@/lib/types';
+import {
+  TaskStatus,
+  type Dependency,
+  type Project,
+  type Stages,
+} from '@/lib/types';
 
 export const stageLabels: Record<keyof Stages, string> = {
   ppo: 'ППО',
@@ -181,3 +186,14 @@ export function projectToFormFields(project: Project): NewProjectFormFields {
     stages,
   };
 }
+
+/// Зависимости этапов по умолчанию: этап начинается после указанной подзадачи
+/// другого этапа, а не следом за предыдущим. Применяются, если у этапа не
+/// задана своя зависимость (startAfterStageId в базе).
+export const defaultStageDependencies: Partial<
+  Record<keyof Stages, Dependency>
+> = {
+  design: { stage: 'ppo', subtask: 'specification' },
+  supply: { stage: 'ppo', subtask: 'specification' },
+  algorithm: { stage: 'ppo', subtask: 'summary' },
+};

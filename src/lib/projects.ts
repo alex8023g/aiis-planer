@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { stageKeys } from '@/lib/stages';
+import { defaultStageDependencies, stageKeys } from '@/lib/stages';
 import type { Project, Stage, Stages, TaskStatus } from '@/lib/types';
 
 /// Колонка dateStart имеет тип DATE, время в ней всегда полночь UTC.
@@ -26,14 +26,19 @@ export async function getProjects(): Promise<Project[]> {
     ) as Record<keyof Stages, Stage | null>;
 
     for (const stage of row.stages) {
-      stages[stage.kind] = {
-        duration: stage.duration,
-        ...(stage.startAfterStage && {
-          startAfter: {
+      /// Своя зависимость важнее умолчания; если её нет, берём общее правило
+      /// для этого этапа. Планировщик сам откатится на последовательный
+      /// порядок, когда этап-зависимость в проект не входит.
+      const startAfter = stage.startAfterStage
+        ? {
             stage: stage.startAfterStage.kind,
             subtask: stage.startAfterSubtask ?? undefined,
-          },
-        }),
+          }
+        : defaultStageDependencies[stage.kind];
+
+      stages[stage.kind] = {
+        duration: stage.duration,
+        ...(startAfter && { startAfter }),
         subtasks: Object.fromEntries(
           stage.subtasks.map((subtask) => [
             subtask.key,
