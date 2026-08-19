@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import type { StageKind, SubtaskKey } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
+import { requireUser } from '@/lib/session';
 import { stageKeys, stageLabels, stageSubtaskKeys } from '@/lib/stages';
 import type { NewProjectFormFields } from '@/lib/stages';
 import type { Stages } from '@/lib/types';
@@ -86,6 +87,10 @@ function subtaskRows(fields: NewProjectFormFields, key: keyof Stages) {
 export async function createProject(
   fields: NewProjectFormFields,
 ): Promise<CreateProjectResult> {
+  /// Экшены вызываются из браузера напрямую — проверяем сессию здесь,
+  /// а не полагаемся на проверку в proxy.ts.
+  await requireUser();
+
   const validated = validate(fields);
 
   if (!validated.ok) {
@@ -123,6 +128,10 @@ export async function updateProject(
   id: string,
   fields: NewProjectFormFields,
 ): Promise<UpdateProjectResult> {
+  /// Экшены вызываются из браузера напрямую — проверяем сессию здесь,
+  /// а не полагаемся на проверку в proxy.ts.
+  await requireUser();
+
   const validated = validate(fields);
 
   if (!validated.ok) {
@@ -181,6 +190,10 @@ export async function updateProject(
 
 /// Этапы и подзадачи удаляются каскадом (см. onDelete: Cascade в schema.prisma).
 export async function deleteProject(id: string): Promise<DeleteProjectResult> {
+  /// Экшены вызываются из браузера напрямую — проверяем сессию здесь,
+  /// а не полагаемся на проверку в proxy.ts.
+  await requireUser();
+
   const deleted = await prisma.project.deleteMany({ where: { id } });
 
   if (deleted.count === 0) {
