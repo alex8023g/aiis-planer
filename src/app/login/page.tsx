@@ -10,8 +10,6 @@ export const metadata = { title: 'Вход — Графики проектов' 
 
 /// Коды, которые Better Auth кладёт в ?error= при неудачном входе.
 const errorMessages: Record<string, string> = {
-  email_not_allowed:
-    'Этой почте вход не разрешён. Обратитесь к администратору, чтобы вас добавили в список доступа.',
   signup_disabled: 'Регистрация новых пользователей отключена.',
   account_not_linked:
     'Этот аккаунт Google уже привязан к другому пользователю.',

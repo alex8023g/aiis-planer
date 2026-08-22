@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function Home() {
   const user = await requireUser();
-  const projects = await getProjects();
+  const projects = await getProjects(user.email);
   const isDaysOff = await getDaysOff();
   return (
     <div className='min-h-screen bg-neutral-50 p-6 text-neutral-900 sm:p-10 dark:bg-neutral-950 dark:text-neutral-100'>

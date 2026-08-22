@@ -118,4 +118,6 @@ export type Project = Omit<
 > & {
   dateStart: `${number}-${number}-${number}`;
   stages: Stages;
+  /// Почты, которым проект доступен (нижний регистр, без повторов).
+  members: string[];
 };

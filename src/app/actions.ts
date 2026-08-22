@@ -3,7 +3,9 @@
 import { revalidatePath } from 'next/cache';
 
 import type { StageKind, SubtaskKey } from '@/generated/prisma/enums';
+import { parseEmailList } from '@/lib/emails';
 import { prisma } from '@/lib/prisma';
+import { isProjectMember } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import { stageKeys, stageLabels, stageSubtaskKeys } from '@/lib/stages';
 import type { NewProjectFormFields } from '@/lib/stages';
@@ -22,6 +24,7 @@ type ValidatedFields = {
   dateStart: Date;
   duration: number;
   includedStages: (keyof Stages)[];
+  members: string[];
 };
 
 /// Общая проверка формы для создания и редактирования.
@@ -39,6 +42,12 @@ function validate(
 
   if (!Number.isFinite(duration) || duration < 1) {
     return { ok: false, error: 'Укажите длительность проекта' };
+  }
+
+  const parsedMembers = parseEmailList(fields.members);
+
+  if (!parsedMembers.ok) {
+    return { ok: false, error: `Неверный адрес: ${parsedMembers.invalid}` };
   }
 
   const includedStages = stageKeys.filter((key) => fields.stages[key].include);
@@ -70,6 +79,7 @@ function validate(
       dateStart: new Date(`${fields.dateStart}T00:00:00.000Z`),
       duration,
       includedStages,
+      members: parsedMembers.emails,
     },
   };
 }
@@ -89,7 +99,7 @@ export async function createProject(
 ): Promise<CreateProjectResult> {
   /// Экшены вызываются из браузера напрямую — проверяем сессию здесь,
   /// а не полагаемся на проверку в proxy.ts.
-  await requireUser();
+  const user = await requireUser();
 
   const validated = validate(fields);
 
@@ -97,8 +107,14 @@ export async function createProject(
     return validated;
   }
 
-  const { name, responsible, dateStart, duration, includedStages } =
+  const { name, responsible, dateStart, duration, includedStages, members } =
     validated.value;
+
+  /// Автор всегда в списке доступа: иначе он создал бы проект и тут же перестал
+  /// его видеть.
+  const memberEmails = members.includes(user.email)
+    ? members
+    : [user.email, ...members];
 
   const project = await prisma.project.create({
     data: {
@@ -106,6 +122,7 @@ export async function createProject(
       responsible,
       dateStart,
       duration,
+      members: { create: memberEmails.map((email) => ({ email })) },
       stages: {
         create: includedStages.map((key) => ({
           kind: key,
@@ -128,9 +145,9 @@ export async function updateProject(
   id: string,
   fields: NewProjectFormFields,
 ): Promise<UpdateProjectResult> {
-  /// Экшены вызываются из браузера напрямую — проверяем сессию здесь,
-  /// а не полагаемся на проверку в proxy.ts.
-  await requireUser();
+  /// Экшены вызываются из браузера напрямую — проверяем сессию и доступ к
+  /// проекту здесь, а не полагаемся на проверку в proxy.ts.
+  const user = await requireUser();
 
   const validated = validate(fields);
 
@@ -138,12 +155,18 @@ export async function updateProject(
     return validated;
   }
 
-  const { name, responsible, dateStart, duration, includedStages } =
+  const { name, responsible, dateStart, duration, includedStages, members } =
     validated.value;
 
-  const exists = await prisma.project.count({ where: { id } });
+  /// Пустой список сделал бы проект недоступным всем и навсегда: открыть его,
+  /// чтобы вернуть себе доступ, было бы уже некому.
+  if (members.length === 0) {
+    return { ok: false, error: 'Оставьте хотя бы одну почту в списке доступа' };
+  }
 
-  if (exists === 0) {
+  /// Ответ одинаковый для «нет проекта» и «нет доступа»: по разным сообщениям
+  /// можно было бы перебором узнать чужие id.
+  if (!(await isProjectMember(id, user.email))) {
     return { ok: false, error: 'Проект не найден' };
   }
 
@@ -151,6 +174,16 @@ export async function updateProject(
     await tx.project.update({
       where: { id },
       data: { name, responsible, dateStart, duration },
+    });
+
+    /// Список доступа задаётся формой целиком, поэтому лишние строки удаляем,
+    /// а оставшиеся не трогаем — createdAt у них сохраняется.
+    await tx.projectMember.deleteMany({
+      where: { projectId: id, email: { notIn: members } },
+    });
+    await tx.projectMember.createMany({
+      data: members.map((email) => ({ projectId: id, email })),
+      skipDuplicates: true,
     });
 
     /// Этапы, с которых сняли галку, удаляются вместе с подзадачами (каскад).
@@ -190,10 +223,15 @@ export async function updateProject(
 
 /// Этапы и подзадачи удаляются каскадом (см. onDelete: Cascade в schema.prisma).
 export async function deleteProject(id: string): Promise<DeleteProjectResult> {
-  /// Экшены вызываются из браузера напрямую — проверяем сессию здесь,
-  /// а не полагаемся на проверку в proxy.ts.
-  await requireUser();
+  /// Экшены вызываются из браузера напрямую — проверяем сессию и доступ к
+  /// проекту здесь, а не полагаемся на проверку в proxy.ts.
+  const user = await requireUser();
 
+  if (!(await isProjectMember(id, user.email))) {
+    return { ok: false, error: 'Проект не найден' };
+  }
+
+  /// Участники удаляются каскадом вместе с проектом.
   const deleted = await prisma.project.deleteMany({ where: { id } });
 
   if (deleted.count === 0) {

@@ -4,9 +4,12 @@ import { PrismaPg } from '@prisma/adapter-pg';
 
 import { PrismaClient } from '../src/generated/prisma/client';
 import type { StageKind, SubtaskKey } from '../src/generated/prisma/enums';
+import { parseEmailList } from '../src/lib/emails';
 import { TaskStatus, type Project, type Stage } from '../src/lib/types';
 
-const projects: Project[] = [
+/// Список доступа у демо-проектов один на всех, поэтому задаётся не здесь,
+/// а в seedMembers().
+const projects: Omit<Project, 'members'>[] = [
   {
     id: 'beta',
     name: 'Дубки',
@@ -141,7 +144,27 @@ const prisma = new PrismaClient({
 
 type StageEntry = [StageKind, Stage | null | undefined];
 
-async function seedProject(project: Project) {
+/// Кому будут видны засеянные проекты: SEED_MEMBER_EMAILS, а если переменная
+/// не задана — все, кто уже входил в приложение. Иначе демо-проекты попали бы
+/// в базу невидимыми.
+async function seedMembers(): Promise<string[]> {
+  const fromEnv = parseEmailList(process.env.SEED_MEMBER_EMAILS ?? '');
+
+  if (!fromEnv.ok) {
+    throw new Error(`SEED_MEMBER_EMAILS: неверный адрес ${fromEnv.invalid}`);
+  }
+
+  if (fromEnv.emails.length > 0) return fromEnv.emails;
+
+  const users = await prisma.user.findMany({ select: { email: true } });
+
+  return users.map(({ email }) => email.toLowerCase());
+}
+
+async function seedProject(
+  project: Omit<Project, 'members'>,
+  members: string[],
+) {
   const dateStart = new Date(`${project.dateStart}T00:00:00.000Z`);
 
   await prisma.project.upsert({
@@ -159,6 +182,11 @@ async function seedProject(project: Project) {
       duration: project.duration,
       dateStart,
     },
+  });
+
+  await prisma.projectMember.createMany({
+    data: members.map((email) => ({ projectId: project.id, email })),
+    skipDuplicates: true,
   });
 
   // Этапы пересоздаются целиком: подзадачи удаляются каскадом.
@@ -214,8 +242,17 @@ async function seedProject(project: Project) {
 }
 
 async function main() {
+  const members = await seedMembers();
+
+  if (members.length === 0) {
+    console.warn(
+      'Ни SEED_MEMBER_EMAILS, ни таблица user не дали ни одной почты — ' +
+        'засеянные проекты никому не будут видны',
+    );
+  }
+
   for (const project of projects) {
-    await seedProject(project);
+    await seedProject(project, members);
     console.log(`seeded project ${project.id} (${project.name})`);
   }
 }

@@ -72,8 +72,25 @@ model Project {
   duration    Int      @default(0)
   responsible String?
   stages      Stage[]
+  /// Кому проект виден и доступен для изменения. Пустого списка не бывает:
+  /// проект без участников никто не смог бы ни открыть, ни удалить.
+  members     ProjectMember[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+/// Доступ к проекту. Хранится почта, а не связь с User, чтобы доступ можно было
+/// выдать до первого входа человека в приложение.
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Всегда в нижнем регистре: сравнение идёт по точному совпадению.
+  email     String
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, email])
+  @@index([email])
 }
 
 /// Этап проекта. Отсутствие строки = этап не входит в проект (null в Stages).

@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import {
   Field,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLegend,
@@ -70,6 +71,7 @@ const noErrors = {
   responsible: false,
   dateStart: false,
   duration: false,
+  members: false,
 };
 
 export type ProjectDialogProps = {
@@ -80,6 +82,10 @@ export type ProjectDialogProps = {
   /// Значения, с которыми открывается форма: пустые для нового проекта,
   /// текущие — для редактирования.
   initialValues: NewProjectFormFields;
+  /// У нового проекта список доступа может быть пустым — автора createProject
+  /// добавит сам. У существующего пустой список означал бы, что проект больше
+  /// не откроет никто.
+  membersRequired?: boolean;
   onSubmit: (
     fields: NewProjectFormFields,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
@@ -92,6 +98,7 @@ export function ProjectDialog({
   title,
   submitLabel,
   initialValues,
+  membersRequired = false,
   onSubmit,
   trigger,
 }: ProjectDialogProps) {
@@ -121,6 +128,7 @@ export function ProjectDialog({
       responsible: formState.responsible.trim() === '',
       dateStart: formState.dateStart === '',
       duration: !Number.isFinite(formState.duration) || formState.duration < 1,
+      members: membersRequired && formState.members.trim() === '',
     };
     setErrors(nextErrors);
     if (Object.values(nextErrors).some(Boolean)) {
@@ -139,7 +147,7 @@ export function ProjectDialog({
   }
 
   function updateField(
-    key: 'name' | 'responsible' | 'dateStart',
+    key: 'name' | 'responsible' | 'dateStart' | 'members',
     value: string,
   ) {
     setFormState((prev) => ({ ...prev, [key]: value }));
@@ -282,6 +290,29 @@ export function ProjectDialog({
                 {/* <FieldError>{errors.duration && 'Укажите длительность'}</FieldError> */}
               </Field>
             </div>
+
+            <Field data-invalid={errors.members}>
+              <Label htmlFor={`project-members-${fieldId}`}>Доступ</Label>
+              <Input
+                id={`project-members-${fieldId}`}
+                name='members'
+                type='text'
+                inputMode='email'
+                autoComplete='off'
+                placeholder='ivan@example.com, petr@example.com'
+                aria-invalid={errors.members}
+                value={formState.members}
+                onChange={(event) => updateField('members', event.target.value)}
+              />
+              <FieldDescription>
+                Почты через запятую. Проект виден только этим людям — войти в
+                приложение может кто угодно, но чужие проекты он не увидит.
+                {!membersRequired && ' Вашу почту добавим автоматически.'}
+              </FieldDescription>
+              <FieldError>
+                {errors.members && 'Укажите хотя бы одну почту'}
+              </FieldError>
+            </Field>
 
             <FieldSeparator />
 

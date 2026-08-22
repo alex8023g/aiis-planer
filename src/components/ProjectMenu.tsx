@@ -69,6 +69,7 @@ export function ProjectMenu({ project }: { project: Project }) {
         title={`Редактирование: ${project.name}`}
         submitLabel='Сохранить'
         initialValues={projectToFormFields(project)}
+        membersRequired
         onSubmit={handleUpdate}
       />
     </div>

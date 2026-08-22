@@ -84,6 +84,9 @@ export type NewProjectFormFields = {
   name: string;
   responsible: string;
   dateStart: string;
+  /// Почты, которым проект доступен, одной строкой — как их ввели в форме.
+  /// Разбор и нормализация — в parseEmailList (src/lib/emails.ts).
+  members: string;
   /// Длительность проекта в рабочих днях.
   duration: number;
   /// subtasks — статус каждой подзадачи; null означает, что подзадача
@@ -112,6 +115,8 @@ export const newProjectFormFields: NewProjectFormFields = {
   name: '',
   responsible: '',
   dateStart: '',
+  /// Автора проекта экшен добавляет сам, поэтому поле стартует пустым.
+  members: '',
   duration: 65,
   stages: {
     ppo: {
@@ -183,6 +188,7 @@ export function projectToFormFields(project: Project): NewProjectFormFields {
     name: project.name,
     responsible: project.responsible ?? '',
     dateStart: project.dateStart,
+    members: project.members.join(', '),
     duration: project.duration,
     stages,
   };
