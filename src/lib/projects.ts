@@ -1,6 +1,8 @@
 import { normalizeEmail } from '@/lib/emails';
 import { prisma } from '@/lib/prisma';
+import type { SessionUser } from '@/lib/session';
 import { defaultStageDependencies, stageKeys } from '@/lib/stages';
+import { UserRole } from '@/lib/types';
 import type { Project, Stage, Stages, TaskStatus } from '@/lib/types';
 
 /// Колонка dateStart имеет тип DATE, время в ней всегда полночь UTC.
@@ -8,12 +10,15 @@ function toDateString(date: Date): Project['dateStart'] {
   return date.toISOString().slice(0, 10) as Project['dateStart'];
 }
 
-/// Проекты, к которым у почты есть доступ. Общего списка «все проекты» в
-/// приложении нет: не входящий в список доступа проект не должен даже
-/// попадаться на глаза.
-export async function getProjects(email: string): Promise<Project[]> {
+/// Проекты, доступные пользователю: у admin — все, у остальных — только те,
+/// где их почта есть в списке доступа. Общего списка «все проекты» для не-admin
+/// в приложении нет: чужой проект не должен даже попадаться на глаза.
+export async function getProjects(user: SessionUser): Promise<Project[]> {
   const rows = await prisma.project.findMany({
-    where: { members: { some: { email: normalizeEmail(email) } } },
+    where:
+      user.role === UserRole.Admin
+        ? {}
+        : { members: { some: { email: normalizeEmail(user.email) } } },
     orderBy: { createdAt: 'asc' },
     include: {
       members: { select: { email: true }, orderBy: { email: 'asc' } },
@@ -67,13 +72,18 @@ export async function getProjects(email: string): Promise<Project[]> {
 }
 
 /// Проверка доступа для серверных экшенов: страница проекта могла остаться
-/// открытой в браузере после того, как почту убрали из списка.
-export async function isProjectMember(
+/// открытой в браузере после того, как почту убрали из списка. admin виден
+/// любой проект, поэтому список доступа для него не проверяется.
+/// Речь только о доступе к проекту; право менять — отдельная проверка
+/// (см. canEdit в src/lib/session.ts).
+export async function hasProjectAccess(
   projectId: string,
-  email: string,
+  user: SessionUser,
 ): Promise<boolean> {
+  if (user.role === UserRole.Admin) return true;
+
   const member = await prisma.projectMember.count({
-    where: { projectId, email: normalizeEmail(email) },
+    where: { projectId, email: normalizeEmail(user.email) },
   });
 
   return member > 0;

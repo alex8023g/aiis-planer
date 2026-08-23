@@ -5,8 +5,8 @@ import { revalidatePath } from 'next/cache';
 import type { StageKind, SubtaskKey } from '@/generated/prisma/enums';
 import { parseEmailList } from '@/lib/emails';
 import { prisma } from '@/lib/prisma';
-import { isProjectMember } from '@/lib/projects';
-import { requireUser } from '@/lib/session';
+import { hasProjectAccess } from '@/lib/projects';
+import { canEdit, requireUser } from '@/lib/session';
 import { stageKeys, stageLabels, stageSubtaskKeys } from '@/lib/stages';
 import type { NewProjectFormFields } from '@/lib/stages';
 import type { Stages } from '@/lib/types';
@@ -17,6 +17,10 @@ export type CreateProjectResult =
 export type UpdateProjectResult = { ok: true } | { ok: false; error: string };
 
 export type DeleteProjectResult = { ok: true } | { ok: false; error: string };
+
+/// Роль viewer: экшен вызывается из браузера напрямую, поэтому спрятанной в UI
+/// кнопки мало — право на изменение проверяется здесь.
+const readOnlyError = 'Только просмотр: изменять проекты нельзя';
 
 type ValidatedFields = {
   name: string;
@@ -101,6 +105,10 @@ export async function createProject(
   /// а не полагаемся на проверку в proxy.ts.
   const user = await requireUser();
 
+  if (!canEdit(user)) {
+    return { ok: false, error: readOnlyError };
+  }
+
   const validated = validate(fields);
 
   if (!validated.ok) {
@@ -149,6 +157,10 @@ export async function updateProject(
   /// проекту здесь, а не полагаемся на проверку в proxy.ts.
   const user = await requireUser();
 
+  if (!canEdit(user)) {
+    return { ok: false, error: readOnlyError };
+  }
+
   const validated = validate(fields);
 
   if (!validated.ok) {
@@ -166,7 +178,7 @@ export async function updateProject(
 
   /// Ответ одинаковый для «нет проекта» и «нет доступа»: по разным сообщениям
   /// можно было бы перебором узнать чужие id.
-  if (!(await isProjectMember(id, user.email))) {
+  if (!(await hasProjectAccess(id, user))) {
     return { ok: false, error: 'Проект не найден' };
   }
 
@@ -227,7 +239,11 @@ export async function deleteProject(id: string): Promise<DeleteProjectResult> {
   /// проекту здесь, а не полагаемся на проверку в proxy.ts.
   const user = await requireUser();
 
-  if (!(await isProjectMember(id, user.email))) {
+  if (!canEdit(user)) {
+    return { ok: false, error: readOnlyError };
+  }
+
+  if (!(await hasProjectAccess(id, user))) {
     return { ok: false, error: 'Проект не найден' };
   }
 

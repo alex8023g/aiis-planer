@@ -5,7 +5,12 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
 import type { StageKind, SubtaskKey } from '../src/generated/prisma/enums';
 import { parseEmailList } from '../src/lib/emails';
-import { TaskStatus, type Project, type Stage } from '../src/lib/types';
+import {
+  TaskStatus,
+  UserRole,
+  type Project,
+  type Stage,
+} from '../src/lib/types';
 
 /// Список доступа у демо-проектов один на всех, поэтому задаётся не здесь,
 /// а в seedMembers().
@@ -161,6 +166,47 @@ async function seedMembers(): Promise<string[]> {
   return users.map(({ email }) => email.toLowerCase());
 }
 
+/// Роли выдаются только в базе — экрана для этого в приложении нет. Чтобы после
+/// установки был хоть один админ, seed поднимает до admin почты из
+/// SEED_ADMIN_EMAILS. Человек должен хотя бы раз войти: до первого входа строки
+/// в таблице user ещё нет и поднимать нечего.
+async function seedAdmins(): Promise<void> {
+  const parsed = parseEmailList(process.env.SEED_ADMIN_EMAILS ?? '');
+
+  if (!parsed.ok) {
+    throw new Error(`SEED_ADMIN_EMAILS: неверный адрес ${parsed.invalid}`);
+  }
+
+  if (parsed.emails.length === 0) return;
+
+  /// В таблице user почта лежит такой, какой её отдал Google, поэтому ищем по
+  /// нижнему регистру, а обновляем по id.
+  const users = await prisma.user.findMany({
+    select: { id: true, email: true },
+  });
+  const found = users.filter((user) =>
+    parsed.emails.includes(user.email.toLowerCase()),
+  );
+  const missing = parsed.emails.filter(
+    (email) => !users.some((user) => user.email.toLowerCase() === email),
+  );
+
+  if (missing.length > 0) {
+    console.warn(
+      `SEED_ADMIN_EMAILS: не входили в приложение, роль не изменена — ${missing.join(', ')}`,
+    );
+  }
+
+  if (found.length === 0) return;
+
+  await prisma.user.updateMany({
+    where: { id: { in: found.map((user) => user.id) } },
+    data: { role: UserRole.Admin },
+  });
+
+  console.log(`admin: ${found.map((user) => user.email).join(', ')}`);
+}
+
 async function seedProject(
   project: Omit<Project, 'members'>,
   members: string[],
@@ -242,6 +288,8 @@ async function seedProject(
 }
 
 async function main() {
+  await seedAdmins();
+
   const members = await seedMembers();
 
   if (members.length === 0) {

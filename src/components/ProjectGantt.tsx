@@ -115,8 +115,11 @@ function subtaskEndOffset(
 export function ProjectGantt({
   project,
   daysOff,
+  canEdit,
 }: {
   project: Project;
+  /// Может ли текущий пользователь менять проект (см. canEdit в lib/session.ts).
+  canEdit: boolean;
   /// Календарь выходных текущего года из isdayoff.ru (см. lib/dayoff.ts).
   daysOff: string;
 }) {
@@ -197,7 +200,7 @@ export function ProjectGantt({
             {totalDuration} дн. (Σ {totalWork} дн.) ·{' '}
             {Math.round(totalProgress * 100)}%
           </p>
-          <ProjectMenu project={project} />
+          {canEdit && <ProjectMenu project={project} />}
         </div>
       </div>
 

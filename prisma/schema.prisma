@@ -63,6 +63,17 @@ enum SubtaskKey {
   poverkaAiis
 }
 
+/// Роль пользователя во всём приложении. Значения совпадают со строками
+/// enum UserRole в src/lib/types.ts.
+enum UserRole {
+  /// Видит и меняет все проекты, включая те, где его нет в списке доступа.
+  admin
+  /// Меняет проекты, в списке доступа которых есть его почта.
+  editor
+  /// Только просмотр.
+  viewer
+}
+
 model Project {
   id          String   @id @default(cuid())
   name        String
@@ -142,6 +153,9 @@ model User {
   email         String
   emailVerified Boolean   @default(false)
   image         String?
+  /// Поле поверх схемы Better Auth: он отдаёт его в сессии, потому что оно
+  /// объявлено в additionalFields (см. src/lib/auth.ts).
+  role          UserRole  @default(viewer)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   sessions      Session[]

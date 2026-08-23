@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { signOut } from '@/lib/auth-client';
 import type { SessionUser } from '@/lib/session';
+import { roleLabels } from '@/lib/types';
 
 export function UserMenu({ user }: { user: SessionUser }) {
   const router = useRouter();
@@ -59,7 +60,8 @@ export function UserMenu({ user }: { user: SessionUser }) {
       />
       <DropdownMenuContent align='end'>
         <div className='px-2 py-1.5 text-xs text-neutral-500 dark:text-neutral-400'>
-          {user.email}
+          <div>{user.email}</div>
+          <div>{roleLabels[user.role]}</div>
         </div>
         <DropdownMenuItem onClick={handleSignOut}>
           <LogOut />

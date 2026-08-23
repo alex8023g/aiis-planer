@@ -6,6 +6,22 @@ export enum TaskStatus {
   Completed = 'completed',
 }
 
+/// Значения совпадают со строками enum UserRole в prisma/schema.prisma.
+export enum UserRole {
+  /// Видит и меняет все проекты, включая те, где его нет в списке доступа.
+  Admin = 'admin',
+  /// Меняет проекты, в списке доступа которых есть его почта.
+  Editor = 'editor',
+  /// Только просмотр.
+  Viewer = 'viewer',
+}
+
+export const roleLabels: Record<UserRole, string> = {
+  [UserRole.Admin]: 'Администратор',
+  [UserRole.Editor]: 'Редактор',
+  [UserRole.Viewer]: 'Только просмотр',
+};
+
 export type Dependency = {
   stage: keyof Stages;
   subtask?: string;

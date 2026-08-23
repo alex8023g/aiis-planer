@@ -6,12 +6,15 @@ import { cache } from 'react';
 
 import { auth } from '@/lib/auth';
 import { normalizeEmail } from '@/lib/emails';
+import { UserRole } from '@/lib/types';
 
 export type SessionUser = {
   id: string;
   name: string;
   email: string;
   image: string | null;
+  /// Что человеку позволено во всём приложении (см. UserRole в types.ts).
+  role: UserRole;
 };
 
 /// cache() — чтобы за один рендер сессия читалась один раз, а не в каждом
@@ -21,8 +24,8 @@ const readSession = cache(async () =>
 );
 
 /// Текущий пользователь или null. Само по себе наличие сессии даёт доступ к
-/// приложению: войти может любой аккаунт Google, а вот проекты видны только
-/// те, где почта есть в списке доступа (см. src/lib/projects.ts).
+/// приложению: войти может любой аккаунт Google, а вот что он увидит и сможет
+/// изменить, решают список доступа проекта и роль (см. src/lib/projects.ts).
 export async function getCurrentUser(): Promise<SessionUser | null> {
   const session = await readSession();
 
@@ -35,6 +38,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     email: normalizeEmail(session.user.email),
     name: session.user.name,
     image: session.user.image ?? null,
+    role: session.user.role,
   };
 }
 
@@ -51,6 +55,13 @@ export async function hasStaleSessionCookie(): Promise<boolean> {
     .some(({ name }) =>
       name.replace('__Secure-', '').startsWith('better-auth'),
     );
+}
+
+/// viewer только смотрит: создавать, менять и удалять проекты ему нельзя.
+/// Проверка на роль, а не на конкретный проект: доступ к проекту — отдельная
+/// проверка (см. hasProjectAccess в src/lib/projects.ts).
+export function canEdit(user: SessionUser): boolean {
+  return user.role !== UserRole.Viewer;
 }
 
 /// Для страниц и серверных экшенов: без действующей сессии — редирект на вход.
