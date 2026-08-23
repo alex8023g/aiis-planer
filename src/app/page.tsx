@@ -1,9 +1,8 @@
-import { AddProjectDialog } from '@/components/AddProjectDialog';
 import { Header } from '@/components/Header';
 import { ProjectGantt, statusStyles } from '@/components/ProjectGantt';
 import { getDaysOff } from '@/lib/dayoff';
 import { canEditProject, getProjects } from '@/lib/projects';
-import { canEdit, requireUser } from '@/lib/session';
+import { requireUser } from '@/lib/session';
 import { TaskStatus, UserRole } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -12,16 +11,18 @@ export default async function Home() {
   const user = await requireUser();
   const projects = await getProjects(user);
   const isDaysOff = await getDaysOff();
-  /// Создавать проекты может любой admin и editor; менять конкретный проект —
-  /// не всякий, поэтому меню проекта спрашивает отдельно (canEditProject).
-  /// Кнопок, которые всё равно ответят отказом, на странице быть не должно.
-  const editable = canEdit(user);
   /// Пустой список проектов у pending выглядел бы так, будто проектов нет, —
   /// на деле ему просто ещё не выдали роль.
   const waiting = user.role === UserRole.Pending;
   return (
     <div className='min-h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100'>
-      <Header user={user} current='projects' />
+      <Header
+        user={user}
+        current='projects'
+        /// pending проектов не видит вовсе — «Проектов: 0» сказало бы ему
+        /// неправду, будто их нет.
+        meta={waiting ? undefined : `( ${projects.length} )`}
+      />
       <main className='/max-w-4xl mx-auto p-6 sm:p-10'>
         {waiting ? (
           <p className='text-sm text-neutral-500 dark:text-neutral-400'>
@@ -30,13 +31,6 @@ export default async function Home() {
           </p>
         ) : (
           <>
-            <div className='mb-8'>
-              {editable && <AddProjectDialog />}
-              <p className='mt-1 text-sm text-neutral-500 dark:text-neutral-400'>
-                Проектов: {projects.length}
-              </p>
-            </div>
-
             <div className='flex flex-col gap-6'>
               {projects.map((project) => (
                 <ProjectGantt

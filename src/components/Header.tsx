@@ -1,9 +1,10 @@
 import { LayoutList, Users } from 'lucide-react';
 import Link from 'next/link';
 
+import { AddProjectDialog } from '@/components/AddProjectDialog';
 import { UserMenu } from '@/components/UserMenu';
 import { buttonVariants } from '@/components/ui/button';
-import type { SessionUser } from '@/lib/session';
+import { canEdit, type SessionUser } from '@/lib/session';
 import { UserRole } from '@/lib/types';
 
 const navLink = buttonVariants({ variant: 'ghost', size: 'sm' });
@@ -23,17 +24,32 @@ const pageTitles = {
 export function Header({
   user,
   current,
+  meta,
 }: {
   user: SessionUser;
   current: keyof typeof pageTitles;
+  /// Приписка к заголовку — например, сколько всего проектов. Считает её
+  /// страница: шапка сама за данными не ходит.
+  meta?: string;
 }) {
   return (
     <header className='sticky top-0 z-10 border-b border-neutral-200 bg-neutral-50/80 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80'>
       <div className='mx-auto flex items-center justify-between gap-4 px-6 py-3 sm:px-10'>
-        <h1 className='text-xl font-semibold tracking-tight'>
-          {pageTitles[current]}
-        </h1>
+        <div className='flex items-baseline gap-3'>
+          <h1 className='text-xl font-semibold tracking-tight'>
+            {pageTitles[current]}
+          </h1>
+          {meta && (
+            <span className='text-md whitespace-nowrap text-neutral-500 dark:text-neutral-400'>
+              {meta}
+            </span>
+          )}
+        </div>
         <div className='flex items-center gap-2'>
+          {/* Кнопка живёт в шапке, чтобы не уезжать вверх вместе со списком.
+              Создавать проекты может admin и editor; viewer'у и pending —
+              нечего. */}
+          {current === 'projects' && canEdit(user) && <AddProjectDialog />}
           {current !== 'projects' && (
             <Link href='/' className={navLink}>
               <LayoutList />

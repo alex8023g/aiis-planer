@@ -14,11 +14,15 @@ export function AddProjectDialog() {
     <ProjectDialog
       open={open}
       onOpenChange={setOpen}
-      title='Новый объект'
+      title='Добавить проект'
       submitLabel='Создать'
       initialValues={newProjectFormFields}
       onSubmit={createProject}
-      trigger={<Button variant='outline'>Новый объект</Button>}
+      trigger={
+        <Button variant='outline' size='sm'>
+          Добавить проект
+        </Button>
+      }
     />
   );
 }
