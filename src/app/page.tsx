@@ -1,6 +1,6 @@
 import { AddProjectDialog } from '@/components/AddProjectDialog';
+import { Header } from '@/components/Header';
 import { ProjectGantt, statusStyles } from '@/components/ProjectGantt';
-import { UserMenu } from '@/components/UserMenu';
 import { getDaysOff } from '@/lib/dayoff';
 import { getProjects } from '@/lib/projects';
 import { canEdit, requireUser } from '@/lib/session';
@@ -16,20 +16,15 @@ export default async function Home() {
   /// отказом, на странице быть не должно.
   const editable = canEdit(user);
   return (
-    <div className='min-h-screen bg-neutral-50 p-6 text-neutral-900 sm:p-10 dark:bg-neutral-950 dark:text-neutral-100'>
-      <main className='/max-w-4xl mx-auto'>
-        <header className='mb-8'>
-          <div className='flex items-start justify-between gap-4'>
-            <h1 className='text-2xl font-semibold tracking-tight'>
-              Графики проектов
-            </h1>
-            <UserMenu user={user} />
-          </div>
+    <div className='min-h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100'>
+      <Header user={user} />
+      <main className='/max-w-4xl mx-auto p-6 sm:p-10'>
+        <div className='mb-8'>
           {editable && <AddProjectDialog />}
           <p className='mt-1 text-sm text-neutral-500 dark:text-neutral-400'>
             Проектов: {projects.length}
           </p>
-        </header>
+        </div>
 
         <div className='flex flex-col gap-6'>
           {projects.map((project) => (
