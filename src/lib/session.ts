@@ -57,11 +57,19 @@ export async function hasStaleSessionCookie(): Promise<boolean> {
     );
 }
 
-/// viewer только смотрит: создавать, менять и удалять проекты ему нельзя.
-/// Проверка на роль, а не на конкретный проект: доступ к проекту — отдельная
-/// проверка (см. hasProjectAccess в src/lib/projects.ts).
+/// Все проекты целиком видят admin (он ими управляет) и viewer (он следит за
+/// ходом работ по всем объектам). editor'у список доступа проекта по-прежнему
+/// решает, что показать.
+export function seesAllProjects(user: SessionUser): boolean {
+  return user.role === UserRole.Admin || user.role === UserRole.Viewer;
+}
+
+/// Менять проекты могут только admin и editor; список — перечислением, а не
+/// «все, кроме viewer»: новая роль не должна получать право на изменение
+/// молча. Проверка на роль, а не на конкретный проект: доступ к проекту —
+/// отдельная проверка (см. hasProjectAccess в src/lib/projects.ts).
 export function canEdit(user: SessionUser): boolean {
-  return user.role !== UserRole.Viewer;
+  return user.role === UserRole.Admin || user.role === UserRole.Editor;
 }
 
 /// Для страниц и серверных экшенов: без действующей сессии — редирект на вход.

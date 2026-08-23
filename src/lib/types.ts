@@ -14,12 +14,15 @@ export enum UserRole {
   Editor = 'editor',
   /// Только просмотр.
   Viewer = 'viewer',
+  /// Вошёл, но роль ещё не выдали: не видит и не меняет ничего.
+  Pending = 'pending',
 }
 
 export const roleLabels: Record<UserRole, string> = {
   [UserRole.Admin]: 'Администратор',
   [UserRole.Editor]: 'Редактор',
   [UserRole.Viewer]: 'Только просмотр',
+  [UserRole.Pending]: 'Ожидает подтверждения',
 };
 
 export type Dependency = {

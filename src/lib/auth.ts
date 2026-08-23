@@ -26,7 +26,9 @@ export const auth = betterAuth({
         /// input: false — роль не приходит ни из формы, ни от Google: её
         /// выдают в базе, иначе любой вошедший назначил бы себя админом.
         input: false,
-        defaultValue: UserRole.Viewer,
+        /// Войти может любой аккаунт Google, поэтому новый пользователь ждёт,
+        /// пока админ выдаст ему роль.
+        defaultValue: UserRole.Pending,
       },
     },
   },

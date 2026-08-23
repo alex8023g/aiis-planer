@@ -72,6 +72,8 @@ enum UserRole {
   editor
   /// Только просмотр.
   viewer
+  /// Вошёл, но роль ещё не выдали: не видит и не меняет ничего.
+  pending
 }
 
 model Project {
@@ -83,8 +85,9 @@ model Project {
   duration    Int      @default(0)
   responsible String?
   stages      Stage[]
-  /// Кому проект виден и доступен для изменения. Пустого списка не бывает:
-  /// проект без участников никто не смог бы ни открыть, ни удалить.
+  /// Чей editor видит и меняет этот проект (admin и viewer видят все проекты
+  /// независимо от списка). Пустого списка не бывает: проект без участников
+  /// не смог бы открыть ни один editor.
   members     ProjectMember[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -155,7 +158,7 @@ model User {
   image         String?
   /// Поле поверх схемы Better Auth: он отдаёт его в сессии, потому что оно
   /// объявлено в additionalFields (см. src/lib/auth.ts).
-  role          UserRole  @default(viewer)
+  role          UserRole  @default(pending)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   sessions      Session[]

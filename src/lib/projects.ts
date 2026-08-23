@@ -1,6 +1,6 @@
 import { normalizeEmail } from '@/lib/emails';
 import { prisma } from '@/lib/prisma';
-import type { SessionUser } from '@/lib/session';
+import { seesAllProjects, type SessionUser } from '@/lib/session';
 import { defaultStageDependencies, stageKeys } from '@/lib/stages';
 import { UserRole } from '@/lib/types';
 import type { Project, Stage, Stages, TaskStatus } from '@/lib/types';
@@ -10,15 +10,14 @@ function toDateString(date: Date): Project['dateStart'] {
   return date.toISOString().slice(0, 10) as Project['dateStart'];
 }
 
-/// Проекты, доступные пользователю: у admin — все, у остальных — только те,
-/// где их почта есть в списке доступа. Общего списка «все проекты» для не-admin
-/// в приложении нет: чужой проект не должен даже попадаться на глаза.
+/// Проекты, доступные пользователю: admin и viewer видят все, editor — только
+/// те, где его почта есть в списке доступа: чужой проект не должен попадаться
+/// ему на глаза (см. seesAllProjects в src/lib/session.ts).
 export async function getProjects(user: SessionUser): Promise<Project[]> {
   const rows = await prisma.project.findMany({
-    where:
-      user.role === UserRole.Admin
-        ? {}
-        : { members: { some: { email: normalizeEmail(user.email) } } },
+    where: seesAllProjects(user)
+      ? {}
+      : { members: { some: { email: normalizeEmail(user.email) } } },
     orderBy: { createdAt: 'asc' },
     include: {
       members: { select: { email: true }, orderBy: { email: 'asc' } },
@@ -72,10 +71,11 @@ export async function getProjects(user: SessionUser): Promise<Project[]> {
 }
 
 /// Проверка доступа для серверных экшенов: страница проекта могла остаться
-/// открытой в браузере после того, как почту убрали из списка. admin виден
+/// открытой в браузере после того, как почту убрали из списка. admin меняет
 /// любой проект, поэтому список доступа для него не проверяется.
 /// Речь только о доступе к проекту; право менять — отдельная проверка
-/// (см. canEdit в src/lib/session.ts).
+/// (см. canEdit в src/lib/session.ts), поэтому viewer'а здесь нет: до этой
+/// проверки он не доходит.
 export async function hasProjectAccess(
   projectId: string,
   user: SessionUser,
