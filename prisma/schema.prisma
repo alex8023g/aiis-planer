@@ -85,9 +85,9 @@ model Project {
   duration    Int      @default(0)
   responsible String?
   stages      Stage[]
-  /// Чей editor видит и меняет этот проект (admin и viewer видят все проекты
-  /// независимо от списка). Пустого списка не бывает: проект без участников
-  /// не смог бы открыть ни один editor.
+  /// Кто из editor'ов может менять этот проект. На видимость список не влияет:
+  /// проекты видны всем, кроме pending. Пустого списка не бывает: такой проект
+  /// не смог бы изменить ни один editor, только admin.
   members     ProjectMember[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

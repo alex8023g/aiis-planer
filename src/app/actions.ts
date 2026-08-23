@@ -170,8 +170,8 @@ export async function updateProject(
   const { name, responsible, dateStart, duration, includedStages, members } =
     validated.value;
 
-  /// Пустой список сделал бы проект недоступным всем и навсегда: открыть его,
-  /// чтобы вернуть себе доступ, было бы уже некому.
+  /// Пустой список оставил бы проект без единого editor'а — менять его смог бы
+  /// только admin. Такие проекты заводить незачем, поэтому не даём.
   if (members.length === 0) {
     return { ok: false, error: 'Оставьте хотя бы одну почту в списке доступа' };
   }

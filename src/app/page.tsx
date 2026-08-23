@@ -2,7 +2,7 @@ import { AddProjectDialog } from '@/components/AddProjectDialog';
 import { Header } from '@/components/Header';
 import { ProjectGantt, statusStyles } from '@/components/ProjectGantt';
 import { getDaysOff } from '@/lib/dayoff';
-import { getProjects } from '@/lib/projects';
+import { canEditProject, getProjects } from '@/lib/projects';
 import { canEdit, requireUser } from '@/lib/session';
 import { TaskStatus, UserRole } from '@/lib/types';
 
@@ -12,8 +12,9 @@ export default async function Home() {
   const user = await requireUser();
   const projects = await getProjects(user);
   const isDaysOff = await getDaysOff();
-  /// Что доступно viewer'у, он и увидит: кнопок, которые всё равно ответят
-  /// отказом, на странице быть не должно.
+  /// Создавать проекты может любой admin и editor; менять конкретный проект —
+  /// не всякий, поэтому меню проекта спрашивает отдельно (canEditProject).
+  /// Кнопок, которые всё равно ответят отказом, на странице быть не должно.
   const editable = canEdit(user);
   /// Пустой список проектов у pending выглядел бы так, будто проектов нет, —
   /// на деле ему просто ещё не выдали роль.
@@ -42,7 +43,7 @@ export default async function Home() {
                   key={project.id}
                   project={project}
                   daysOff={isDaysOff}
-                  canEdit={editable}
+                  canEdit={canEditProject(project, user)}
                 />
               ))}
             </div>

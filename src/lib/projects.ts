@@ -1,6 +1,6 @@
 import { normalizeEmail } from '@/lib/emails';
 import { prisma } from '@/lib/prisma';
-import { seesAllProjects, type SessionUser } from '@/lib/session';
+import { canEdit, type SessionUser } from '@/lib/session';
 import { defaultStageDependencies, stageKeys } from '@/lib/stages';
 import { UserRole } from '@/lib/types';
 import type { Project, Stage, Stages, TaskStatus } from '@/lib/types';
@@ -10,14 +10,14 @@ function toDateString(date: Date): Project['dateStart'] {
   return date.toISOString().slice(0, 10) as Project['dateStart'];
 }
 
-/// Проекты, доступные пользователю: admin и viewer видят все, editor — только
-/// те, где его почта есть в списке доступа: чужой проект не должен попадаться
-/// ему на глаза (см. seesAllProjects в src/lib/session.ts).
+/// Проекты видны всем, кроме pending: список доступа проекта решает не что
+/// показать, а кто может это менять (см. canEditProject).
 export async function getProjects(user: SessionUser): Promise<Project[]> {
+  /// pending роли ещё не выдали — ему не видно ничего, даже если его почта уже
+  /// оказалась в списке доступа какого-нибудь проекта.
+  if (user.role === UserRole.Pending) return [];
+
   const rows = await prisma.project.findMany({
-    where: seesAllProjects(user)
-      ? {}
-      : { members: { some: { email: normalizeEmail(user.email) } } },
     orderBy: { createdAt: 'asc' },
     include: {
       members: { select: { email: true }, orderBy: { email: 'asc' } },
@@ -68,6 +68,18 @@ export async function getProjects(user: SessionUser): Promise<Project[]> {
       stages: stages as Stages,
     };
   });
+}
+
+/// Может ли пользователь менять этот проект: admin — любой, editor — только
+/// тот, где его почта в списке доступа. Список уже загружен вместе с проектом,
+/// поэтому запроса в базу тут нет — этим страница и решает, показывать ли меню
+/// проекта. В экшенах тот же вопрос задаётся заново (hasProjectAccess): данные
+/// на странице могли устареть.
+export function canEditProject(project: Project, user: SessionUser): boolean {
+  if (!canEdit(user)) return false;
+  if (user.role === UserRole.Admin) return true;
+
+  return project.members.includes(normalizeEmail(user.email));
 }
 
 /// Проверка доступа для серверных экшенов: страница проекта могла остаться

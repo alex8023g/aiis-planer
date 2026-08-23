@@ -57,13 +57,6 @@ export async function hasStaleSessionCookie(): Promise<boolean> {
     );
 }
 
-/// Все проекты целиком видят admin (он ими управляет) и viewer (он следит за
-/// ходом работ по всем объектам). editor'у список доступа проекта по-прежнему
-/// решает, что показать.
-export function seesAllProjects(user: SessionUser): boolean {
-  return user.role === UserRole.Admin || user.role === UserRole.Viewer;
-}
-
 /// Менять проекты могут только admin и editor; список — перечислением, а не
 /// «все, кроме viewer»: новая роль не должна получать право на изменение
 /// молча. Проверка на роль, а не на конкретный проект: доступ к проекту —
