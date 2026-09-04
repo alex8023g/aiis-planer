@@ -1,6 +1,7 @@
 import dayjs, { type Dayjs } from 'dayjs';
 import dayOfYear from 'dayjs/plugin/dayOfYear';
 import utc from 'dayjs/plugin/utc';
+import Link from 'next/link';
 
 import { ProjectMenu } from '@/components/ProjectMenu';
 import { stageLabels } from '@/lib/stages';
@@ -116,8 +117,16 @@ export function ProjectGantt({
   project,
   daysOff,
   canEdit,
+  href,
+  deleteRedirect,
 }: {
   project: Project;
+  /// Куда ведёт название проекта. На самой странице проекта ссылки нет —
+  /// вести ей оттуда некуда.
+  href?: string;
+  /// Куда уйти после удаления проекта (см. ProjectMenu). В списке не нужно:
+  /// карточка просто исчезает.
+  deleteRedirect?: string;
   /// Может ли текущий пользователь менять проект (см. canEdit в lib/session.ts).
   canEdit: boolean;
   /// Календарь выходных текущего года из isdayoff.ru (см. lib/dayoff.ts).
@@ -186,7 +195,14 @@ export function ProjectGantt({
     <section className='rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6 dark:border-neutral-800 dark:bg-neutral-900'>
       <div className='mb-4 flex items-baseline justify-between gap-4'>
         <h2 className='text-lg font-semibold tracking-tight'>
-          {project.name} {project.responsible && `- ${project.responsible} `}
+          {href ? (
+            <Link href={href} className='hover:underline'>
+              {project.name}
+            </Link>
+          ) : (
+            project.name
+          )}{' '}
+          {project.responsible && `- ${project.responsible} `}
           {' - '}
           {project.dateStart}
           {dateFinish && ` - ${dateFinish}`}
@@ -200,7 +216,9 @@ export function ProjectGantt({
             {totalDuration} дн. (Σ {totalWork} дн.) ·{' '}
             {Math.round(totalProgress * 100)}%
           </p>
-          {canEdit && <ProjectMenu project={project} />}
+          {canEdit && (
+            <ProjectMenu project={project} deleteRedirect={deleteRedirect} />
+          )}
         </div>
       </div>
 

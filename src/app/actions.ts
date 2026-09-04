@@ -229,6 +229,7 @@ export async function updateProject(
   });
 
   revalidatePath('/');
+  revalidatePath(`/projects/${id}`);
 
   return { ok: true };
 }
@@ -255,6 +256,7 @@ export async function deleteProject(id: string): Promise<DeleteProjectResult> {
   }
 
   revalidatePath('/');
+  revalidatePath(`/projects/${id}`);
 
   return { ok: true };
 }

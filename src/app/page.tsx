@@ -38,6 +38,7 @@ export default async function Home() {
                   project={project}
                   daysOff={isDaysOff}
                   canEdit={canEditProject(project, user)}
+                  href={`/projects/${project.id}`}
                 />
               ))}
             </div>

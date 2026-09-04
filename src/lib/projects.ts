@@ -1,3 +1,4 @@
+import type { Prisma } from '@/generated/prisma/client';
 import { normalizeEmail } from '@/lib/emails';
 import { prisma } from '@/lib/prisma';
 import { canEdit, type SessionUser } from '@/lib/session';
@@ -10,6 +11,62 @@ function toDateString(date: Date): Project['dateStart'] {
   return date.toISOString().slice(0, 10) as Project['dateStart'];
 }
 
+/// Что нужно загрузить вместе с проектом, чтобы собрать Project целиком.
+/// Один объект на оба запроса: список и отдельный проект должны приходить
+/// одинаковыми, иначе одна и та же карточка выглядела бы по-разному.
+const projectInclude = {
+  members: { select: { email: true }, orderBy: { email: 'asc' } },
+  stages: {
+    include: {
+      subtasks: { orderBy: { position: 'asc' } },
+      startAfterStage: { select: { kind: true } },
+    },
+  },
+} as const;
+
+type ProjectRow = Prisma.ProjectGetPayload<{ include: typeof projectInclude }>;
+
+/// Строка базы в Project: этапы из массива превращаются в объект с
+/// фиксированными ключами (см. Stages в @/lib/types), отсутствующие — в null.
+function toProject(row: ProjectRow): Project {
+  const stages = Object.fromEntries(
+    stageKeys.map((key) => [key, null]),
+  ) as Record<keyof Stages, Stage | null>;
+
+  for (const stage of row.stages) {
+    /// Своя зависимость важнее умолчания; если её нет, берём общее правило
+    /// для этого этапа. Планировщик сам откатится на последовательный
+    /// порядок, когда этап-зависимость в проект не входит.
+    const startAfter = stage.startAfterStage
+      ? {
+          stage: stage.startAfterStage.kind,
+          subtask: stage.startAfterSubtask ?? undefined,
+        }
+      : defaultStageDependencies[stage.kind];
+
+    stages[stage.kind] = {
+      duration: stage.duration,
+      ...(startAfter && { startAfter }),
+      subtasks: Object.fromEntries(
+        stage.subtasks.map((subtask) => [
+          subtask.key,
+          subtask.status as TaskStatus | null,
+        ]),
+      ),
+    };
+  }
+
+  return {
+    id: row.id,
+    name: row.name,
+    responsible: row.responsible,
+    members: row.members.map((member) => member.email),
+    duration: row.duration,
+    dateStart: toDateString(row.dateStart),
+    stages: stages as Stages,
+  };
+}
+
 /// Проекты видны всем, кроме pending: список доступа проекта решает не что
 /// показать, а кто может это менять (см. canEditProject).
 export async function getProjects(user: SessionUser): Promise<Project[]> {
@@ -19,55 +76,27 @@ export async function getProjects(user: SessionUser): Promise<Project[]> {
 
   const rows = await prisma.project.findMany({
     orderBy: { createdAt: 'asc' },
-    include: {
-      members: { select: { email: true }, orderBy: { email: 'asc' } },
-      stages: {
-        include: {
-          subtasks: { orderBy: { position: 'asc' } },
-          startAfterStage: { select: { kind: true } },
-        },
-      },
-    },
+    include: projectInclude,
   });
 
-  return rows.map((row) => {
-    const stages = Object.fromEntries(
-      stageKeys.map((key) => [key, null]),
-    ) as Record<keyof Stages, Stage | null>;
+  return rows.map(toProject);
+}
 
-    for (const stage of row.stages) {
-      /// Своя зависимость важнее умолчания; если её нет, берём общее правило
-      /// для этого этапа. Планировщик сам откатится на последовательный
-      /// порядок, когда этап-зависимость в проект не входит.
-      const startAfter = stage.startAfterStage
-        ? {
-            stage: stage.startAfterStage.kind,
-            subtask: stage.startAfterSubtask ?? undefined,
-          }
-        : defaultStageDependencies[stage.kind];
+/// Один проект по id или null, если его нет либо смотреть его нельзя.
+/// Видимость та же, что у списка: не найден и не показан — один и тот же
+/// ответ, чтобы по разнице нельзя было узнать чужие id.
+export async function getProject(
+  id: string,
+  user: SessionUser,
+): Promise<Project | null> {
+  if (user.role === UserRole.Pending) return null;
 
-      stages[stage.kind] = {
-        duration: stage.duration,
-        ...(startAfter && { startAfter }),
-        subtasks: Object.fromEntries(
-          stage.subtasks.map((subtask) => [
-            subtask.key,
-            subtask.status as TaskStatus | null,
-          ]),
-        ),
-      };
-    }
-
-    return {
-      id: row.id,
-      name: row.name,
-      responsible: row.responsible,
-      members: row.members.map((member) => member.email),
-      duration: row.duration,
-      dateStart: toDateString(row.dateStart),
-      stages: stages as Stages,
-    };
+  const row = await prisma.project.findUnique({
+    where: { id },
+    include: projectInclude,
   });
+
+  return row ? toProject(row) : null;
 }
 
 /// Может ли пользователь менять этот проект: admin — любой, editor — только

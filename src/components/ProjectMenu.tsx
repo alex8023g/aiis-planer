@@ -1,6 +1,7 @@
 'use client';
 
 import { EllipsisVertical, Pencil, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
 import { deleteProject, updateProject } from '@/app/actions';
@@ -16,7 +17,16 @@ import { projectToFormFields } from '@/lib/stages';
 import type { NewProjectFormFields } from '@/lib/stages';
 import type { Project } from '@/lib/types';
 
-export function ProjectMenu({ project }: { project: Project }) {
+export function ProjectMenu({
+  project,
+  deleteRedirect,
+}: {
+  project: Project;
+  /// Куда уйти после удаления. Нужно странице проекта: она показывает как раз
+  /// то, чего после удаления уже нет, и остаться на ней нельзя.
+  deleteRedirect?: string;
+}) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -27,7 +37,8 @@ export function ProjectMenu({ project }: { project: Project }) {
     setError(null);
     startTransition(async () => {
       const result = await deleteProject(project.id);
-      if (!result.ok) setError(result.error);
+      if (!result.ok) return setError(result.error);
+      if (deleteRedirect) router.replace(deleteRedirect);
     });
   }
 

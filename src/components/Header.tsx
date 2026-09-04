@@ -12,6 +12,7 @@ const navLink = buttonVariants({ variant: 'ghost', size: 'sm' });
 /// Заголовок в шапке — название текущей страницы.
 const pageTitles = {
   projects: 'Графики проектов',
+  project: 'Проект',
   users: 'Пользователи',
 } as const;
 
@@ -24,10 +25,14 @@ const pageTitles = {
 export function Header({
   user,
   current,
+  title,
   meta,
 }: {
   user: SessionUser;
   current: keyof typeof pageTitles;
+  /// Заголовок вместо названия страницы: у страницы проекта он свой —
+  /// название самого проекта, общего слова «Проект» тут мало.
+  title?: string;
   /// Приписка к заголовку — например, сколько всего проектов. Считает её
   /// страница: шапка сама за данными не ходит.
   meta?: string;
@@ -37,7 +42,7 @@ export function Header({
       <div className='mx-auto flex items-center justify-between gap-4 px-6 py-3 sm:px-10'>
         <div className='flex items-baseline gap-3'>
           <h1 className='text-xl font-semibold tracking-tight'>
-            {pageTitles[current]}
+            {title ?? pageTitles[current]}
           </h1>
           {meta && (
             <span className='text-md whitespace-nowrap text-neutral-500 dark:text-neutral-400'>
