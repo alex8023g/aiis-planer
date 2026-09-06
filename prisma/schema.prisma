@@ -77,20 +77,111 @@ enum UserRole {
 }
 
 model Project {
-  id          String   @id @default(cuid())
+  id          String             @id @default(cuid())
   name        String
   /// Дата начала проекта, без времени.
-  dateStart   DateTime @db.Date
+  dateStart   DateTime           @db.Date
   /// Длительность в днях.
-  duration    Int      @default(0)
+  duration    Int                @default(0)
   responsible String?
   stages      Stage[]
   /// Кто из editor'ов может менять этот проект. На видимость список не влияет:
   /// проекты видны всем, кроме pending. Пустого списка не бывает: такой проект
   /// не смог бы изменить ни один editor, только admin.
   members     ProjectMember[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  /// Точки учёта проекта: что именно на объекте считает электроэнергию.
+  points      MeasurementPoint[]
+  /// Объекты проекта: по ним раскладываются точки учёта и спецификации.
+  facilities  Facility[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+/// Позиция спецификации объекта: наименование оборудования и количество.
+/// Спецификация висит на объекте, а не на проекте: монтажнику нужен список по
+/// конкретной площадке, а общий по проекту складывается из них.
+model SpecificationItem {
+  id         String   @id @default(cuid())
+  facilityId String
+  facility   Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  name       String
+  /// Модель (марка) оборудования. Необязательна: в спецификацию попадают и
+  /// позиции без конкретной модели — кабель, монтажный материал.
+  model      String?
+  quantity   Int
+  /// Порядок в спецификации: сортировать по названию нельзя — порядок позиций
+  /// задаёт составитель.
+  position   Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([facilityId])
+}
+
+/// Объект проекта: площадка, на которой стоят точки учёта и по которой собрана
+/// спецификация. Своя строка, а не текст в точке: объект переименовывают
+/// целиком, а опечатка в свободном поле развалила бы группу на две.
+model Facility {
+  id                 String              @id @default(cuid())
+  projectId          String
+  project            Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name               String
+  /// Что на объекте есть сейчас: существующие приборы учёта, шкафы, каналы
+  /// связи. Пустая строка, а не null: описание дописывают позже, но отдельного
+  /// смысла у «описания нет» и «описание пустое» нет.
+  currentDescription String              @default("")
+  /// Техническое решение: что на объекте делаем — как подключаемся, что меняем,
+  /// что ставим. Пустая строка по той же причине, что и у описания.
+  technicalSolution  String              @default("")
+  /// Порядок объектов в списке: задаёт составитель, по названию не сортируем.
+  position           Int
+  points             MeasurementPoint[]
+  /// Спецификация: что и в каком количестве ставим на этом объекте.
+  specification      SpecificationItem[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  /// Имя объекта уникально внутри проекта: повтор дал бы две группы вместо
+  /// одной, и точки разошлись бы по ним незаметно.
+  @@unique([projectId, name])
+  @@index([projectId])
+}
+
+/// Точка учёта проекта: место, где стоит прибор учёта. Висит на проекте, а не
+/// на решении: точки заводят по объекту целиком, ещё до того, как решения
+/// разложены по шкафам.
+model MeasurementPoint {
+  id            String    @id @default(cuid())
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Объект, на котором стоит точка. Необязателен: точки заводят и до того, как
+  /// объекты разложены, — такие показываем группой «Без объекта».
+  /// SetNull, а не Cascade: удаление объекта не должно уносить точки — их
+  /// набирали руками, и они переживают перекройку объектов.
+  facilityId    String?
+  facility      Facility? @relation(fields: [facilityId], references: [id], onDelete: SetNull)
+  /// Как точка подписана на объекте: фидер, ТП, ввод. Не уникально: одинаково
+  /// названные точки на объекте бывают, различает их порядок в списке.
+  name          String
+  /// Модель прибора учёта. Необязательна: точку заводят и до того, как решено,
+  /// какой счётчик на ней стоит.
+  meterModel    String?
+  /// Заводской номер прибора учёта. Необязателен по той же причине, что и
+  /// модель, и появляется ещё позже неё: номер узнают, когда счётчик уже в
+  /// руках. Не уникален: в базе живут точки разных проектов и разных лет, а
+  /// замена счётчика на соседний номер — обычное дело.
+  meterNumber   String?
+  /// Где именно стоит прибор учёта: шкаф, опора, щитовая. Не то же, что объект:
+  /// объект — площадка целиком, а это место на ней, куда идти монтажнику.
+  /// Необязательно: на осмотре записывают не всегда.
+  meterLocation String?
+  /// Порядок точки внутри своего объекта (у точек без объекта — своя нумерация).
+  position      Int
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([projectId])
+  @@index([facilityId])
 }
 
 /// Доступ к проекту. Хранится почта, а не связь с User, чтобы доступ можно было

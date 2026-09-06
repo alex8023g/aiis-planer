@@ -1,4 +1,9 @@
-import type { ProjectModel } from '@/generated/prisma/models';
+import type {
+  FacilityModel,
+  MeasurementPointModel,
+  ProjectModel,
+  SpecificationItemModel,
+} from '@/generated/prisma/models';
 
 export enum TaskStatus {
   NotStarted = 'not_started',
@@ -140,3 +145,36 @@ export type Project = Omit<
   /// Почты, которым проект доступен (нижний регистр, без повторов).
   members: string[];
 };
+
+/// Позиция спецификации в том виде, в каком её показывает страница: порядок
+/// задаётся сортировкой запроса, поэтому position в UI не нужен.
+export type SpecificationItem = Pick<
+  SpecificationItemModel,
+  'id' | 'name' | 'model' | 'quantity'
+>;
+
+/// Точка учёта в том виде, в каком её показывает страница: position, как и у
+/// позиции спецификации, в UI не нужен — порядок задан сортировкой запроса.
+/// facilityId, наоборот, нужен: точку переносят с объекта на объект.
+export type MeasurementPoint = Pick<
+  MeasurementPointModel,
+  'id' | 'name' | 'meterModel' | 'meterNumber' | 'meterLocation' | 'facilityId'
+>;
+
+/// Объект проекта. position в UI не нужен по той же причине, что и у точки.
+export type Facility = Pick<
+  FacilityModel,
+  'id' | 'name' | 'currentDescription' | 'technicalSolution'
+>;
+
+/// Объект вместе с тем, что на нём: точками учёта и спецификацией. В таком виде
+/// его показывают и список объектов (нужны итоги по каждому), и страница самого
+/// объекта.
+export type FacilityWithContent = Facility & {
+  points: MeasurementPoint[];
+  specification: SpecificationItem[];
+};
+
+/// Ответ серверного экшена. Ошибка возвращается значением, а не исключением:
+/// её показывают рядом с формой, а не страницей ошибки.
+export type ActionResult = { ok: true } | { ok: false; error: string };

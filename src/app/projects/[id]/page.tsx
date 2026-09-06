@@ -1,8 +1,15 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { Header } from '@/components/Header';
 import { ProjectGantt, statusStyles } from '@/components/ProjectGantt';
+import { buttonVariants } from '@/components/ui/button';
 import { getDaysOff } from '@/lib/dayoff';
+import {
+  facilityTotals,
+  getFacilities,
+  getUnassignedPoints,
+} from '@/lib/facilities';
 import { canEditProject, getProject } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import {
@@ -42,6 +49,15 @@ export default async function ProjectPage({
 
   const daysOff = await getDaysOff();
   const canEdit = canEditProject(project, user);
+  /// Своих точек и спецификации у проекта нет: и то, и другое складывается из
+  /// объектов. Точки без объекта считаем отдельно — на странице объектов они
+  /// идут своей группой.
+  const [facilities, unassigned] = await Promise.all([
+    getFacilities(project.id),
+    getUnassignedPoints(project.id),
+  ]);
+  const totals = facilityTotals(facilities);
+  const points = totals.points + unassigned.length;
 
   /// Порядок этапов — из stageKeys: тот же, в котором они идут на графике и в
   /// форме. Общий тип Stage вместо литеральных типов каждого этапа — иначе
@@ -68,6 +84,61 @@ export default async function ProjectPage({
           /// нечего.
           deleteRedirect='/'
         />
+
+        <section className='rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6 dark:border-neutral-800 dark:bg-neutral-900'>
+          <div className='flex flex-wrap items-center justify-between gap-3'>
+            <h2 className='text-lg font-semibold tracking-tight'>
+              АИИС{' '}
+              <span className='text-sm font-normal text-neutral-500 dark:text-neutral-400'>
+                {facilities.length > 0
+                  ? `— объектов: ${facilities.length}, точек: ${points}, позиций: ${totals.items}, единиц: ${totals.units}`
+                  : '— не заведены'}
+              </span>
+            </h2>
+            <Link
+              href={`/projects/${project.id}/aiis`}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              {canEdit ? 'Заполнить' : 'Открыть'}
+            </Link>
+          </div>
+
+          {/* Объекты видно сразу: за точками и спецификацией конкретного места
+              переходят по ссылке, но из чего состоит проект — вопрос к этой
+              странице. */}
+          {facilities.length > 0 && (
+            <ul className='mt-4 flex flex-col gap-1'>
+              {facilities.map((facility) => (
+                <li
+                  key={facility.id}
+                  className='flex flex-wrap gap-x-2 text-sm'
+                >
+                  <Link
+                    href={`/projects/${project.id}/aiis/${facility.id}`}
+                    className='underline-offset-4 hover:underline'
+                  >
+                    {facility.name}
+                  </Link>
+                  <span className='text-xs text-neutral-500 dark:text-neutral-400'>
+                    точек: {facility.points.length} ·{' '}
+                    {facility.specification.length > 0
+                      ? `позиций: ${facility.specification.length}`
+                      : 'спецификация пуста'}
+                  </span>
+                </li>
+              ))}
+
+              {/* Точки без объекта — незакрытый хвост: на странице проекта о
+                  нём должно быть видно, что он есть. */}
+              {unassigned.length > 0 && (
+                <li className='flex flex-wrap gap-x-2 text-sm text-neutral-500 dark:text-neutral-400'>
+                  <span>Без объекта</span>
+                  <span className='text-xs'>точек: {unassigned.length}</span>
+                </li>
+              )}
+            </ul>
+          )}
+        </section>
 
         <section className='rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6 dark:border-neutral-800 dark:bg-neutral-900'>
           <h2 className='mb-4 text-lg font-semibold tracking-tight'>Этапы</h2>

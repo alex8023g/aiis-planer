@@ -1,10 +1,16 @@
 import type { Prisma } from '@/generated/prisma/client';
 import { normalizeEmail } from '@/lib/emails';
 import { prisma } from '@/lib/prisma';
-import { canEdit, type SessionUser } from '@/lib/session';
+import { canEdit, requireUser, type SessionUser } from '@/lib/session';
 import { defaultStageDependencies, stageKeys } from '@/lib/stages';
 import { UserRole } from '@/lib/types';
-import type { Project, Stage, Stages, TaskStatus } from '@/lib/types';
+import type {
+  ActionResult,
+  Project,
+  Stage,
+  Stages,
+  TaskStatus,
+} from '@/lib/types';
 
 /// Колонка dateStart имеет тип DATE, время в ней всегда полночь UTC.
 function toDateString(date: Date): Project['dateStart'] {
@@ -128,4 +134,25 @@ export async function hasProjectAccess(
   });
 
   return member > 0;
+}
+
+/// Общая проверка для серверных экшенов проекта: войти, иметь право менять и
+/// иметь доступ к проекту. Экшены вызываются из браузера напрямую, поэтому
+/// спрятанной в UI кнопки мало — право проверяется здесь заново.
+/// Ответ «Проект не найден» одинаков для отсутствующего и чужого проекта — по
+/// разнице можно было бы перебором узнать чужие id.
+export async function requireProjectEditor(
+  projectId: string,
+): Promise<ActionResult> {
+  const user = await requireUser();
+
+  if (!canEdit(user)) {
+    return { ok: false, error: 'Только просмотр: изменять проект нельзя' };
+  }
+
+  if (!(await hasProjectAccess(projectId, user))) {
+    return { ok: false, error: 'Проект не найден' };
+  }
+
+  return { ok: true };
 }
