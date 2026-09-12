@@ -142,7 +142,7 @@ export async function createProject(
     select: { id: true },
   });
 
-  revalidatePath('/');
+  revalidatePath('/projects');
 
   return { ok: true, id: project.id };
 }
@@ -228,7 +228,7 @@ export async function updateProject(
     }
   });
 
-  revalidatePath('/');
+  revalidatePath('/projects');
   revalidatePath(`/projects/${id}`);
 
   return { ok: true };
@@ -255,7 +255,7 @@ export async function deleteProject(id: string): Promise<DeleteProjectResult> {
     return { ok: false, error: 'Проект не найден' };
   }
 
-  revalidatePath('/');
+  revalidatePath('/projects');
   revalidatePath(`/projects/${id}`);
 
   return { ok: true };

@@ -65,7 +65,7 @@ export default async function ProjectPage({
           canEdit={canEdit}
           /// С удалённого проекта возвращаемся к списку: смотреть тут уже
           /// нечего.
-          deleteRedirect='/'
+          deleteRedirect='/projects'
         />
 
         <section className='rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6 dark:border-neutral-800 dark:bg-neutral-900'>

@@ -14,6 +14,9 @@ const pageTitles = {
   projects: 'Графики проектов',
   project: 'Проект',
   users: 'Пользователи',
+  contracts: 'Договоры',
+  tenders: 'Конкурсы',
+  letters: 'Регистрация писем',
 } as const;
 
 /// Шапка приложения. Липкая: список проектов длинный, а меню пользователя
@@ -56,7 +59,7 @@ export function Header({
               нечего. */}
           {current === 'projects' && canEdit(user) && <AddProjectDialog />}
           {current !== 'projects' && (
-            <Link href='/' className={navLink}>
+            <Link href='/projects' className={navLink}>
               <LayoutList />
               Проекты
             </Link>
