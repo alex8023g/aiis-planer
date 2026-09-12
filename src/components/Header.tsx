@@ -13,6 +13,7 @@ const navLink = buttonVariants({ variant: 'ghost', size: 'sm' });
 const pageTitles = {
   projects: 'Графики проектов',
   project: 'Проект',
+  aiis: 'АИИС',
   users: 'Пользователи',
   contracts: 'Договоры',
   tenders: 'Конкурсы',

@@ -1,4 +1,8 @@
-import type { ProjectModel } from '@/generated/prisma/models';
+import type {
+  FacilityModel,
+  MeasurementPointModel,
+  ProjectModel,
+} from '@/generated/prisma/models';
 
 export enum TaskStatus {
   NotStarted = 'not_started',
@@ -140,6 +144,19 @@ export type Project = Omit<
   /// Почты, которым проект доступен (нижний регистр, без повторов).
   members: string[];
 };
+
+/// Строка таблицы точек учёта: сама точка и объект, за которым она закреплена.
+/// Объекта может не быть — точку заводят и до того, как объекты разложены.
+export type MeasurementPointRow = Pick<
+  MeasurementPointModel,
+  'id' | 'name' | 'meterModel' | 'meterNumber' | 'facilityId'
+> & {
+  facility: { name: string } | null;
+};
+
+/// Объект проекта в том виде, в каком его показывает таблица точек: по имени
+/// сопоставляют вставленную колонку «Объект».
+export type Facility = Pick<FacilityModel, 'id' | 'name'>;
 
 /// Ответ серверного экшена. Ошибка возвращается значением, а не исключением:
 /// её показывают рядом с формой, а не страницей ошибки.

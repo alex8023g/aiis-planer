@@ -1,7 +1,9 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { Header } from '@/components/Header';
 import { ProjectGantt, statusStyles } from '@/components/ProjectGantt';
+import { buttonVariants } from '@/components/ui/button';
 import { getDaysOff } from '@/lib/dayoff';
 import { canEditProject, getProject } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
@@ -67,6 +69,18 @@ export default async function ProjectPage({
           /// нечего.
           deleteRedirect='/projects'
         />
+
+        <section className='rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6 dark:border-neutral-800 dark:bg-neutral-900'>
+          <div className='flex flex-wrap items-center justify-between gap-3'>
+            <h2 className='text-lg font-semibold tracking-tight'>АИИС</h2>
+            <Link
+              href={`/projects/${project.id}/aiis`}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              {canEdit ? 'Заполнить' : 'Открыть'}
+            </Link>
+          </div>
+        </section>
 
         <section className='rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6 dark:border-neutral-800 dark:bg-neutral-900'>
           <h2 className='mb-4 text-lg font-semibold tracking-tight'>Этапы</h2>
