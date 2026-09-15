@@ -5,6 +5,7 @@ import {
   LayoutList,
   Mail,
   Users,
+  Warehouse,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -114,6 +115,13 @@ export default async function HomePage() {
               icon={Mail}
               title='Регистрация писем'
               description='Входящая и исходящая корреспонденция'
+              soon
+            />
+            <SectionLink
+              href='/warehouse'
+              icon={Warehouse}
+              title='Склад'
+              description='Оборудование и материалы на складе'
               soon
             />
             {/* Страница пользователей admin-only — как и ссылка на неё. */}
