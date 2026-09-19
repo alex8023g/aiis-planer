@@ -14,6 +14,7 @@ const pageTitles = {
   projects: 'Графики проектов',
   project: 'Проект',
   aiis: 'АИИС',
+  aiis2: 'АИИС 2',
   users: 'Пользователи',
   contracts: 'Договоры',
   tenders: 'Конкурсы',
