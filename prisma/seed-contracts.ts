@@ -32,6 +32,7 @@ type ContractRow = {
   amount: number | null;
   amountNote: string | null;
   vatNote: string | null;
+  dsNote: string | null;
   termText: string | null;
   startsAt?: string | null;
   endsAt?: string | null;
@@ -68,6 +69,7 @@ async function main() {
       amount: row.amount,
       amountNote: row.amountNote,
       vatNote: row.vatNote,
+      dsNote: row.dsNote,
       termText: row.termText,
       startsAt: asDate(row.startsAt),
       endsAt: asDate(row.endsAt),

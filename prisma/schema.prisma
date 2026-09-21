@@ -539,7 +539,11 @@ model Contract {
   /// null, если в реестре вместо суммы текст — тогда см. amountNote.
   amount        Decimal?        @db.Decimal(14, 2)
   amountNote    String?
+  /// Только НДС. В реестрах ЭПР и СРО это одна колонка с dsNote, но пишут
+  /// в неё и ставку, и состояние допсоглашения — разводим их при разборе.
   vatNote       String?
+  /// Состояние дополнительного соглашения («ДС № 1 согласовано», «закрыт»).
+  dsNote        String?
   termText      String?
   startsAt      DateTime?
   endsAt        DateTime?

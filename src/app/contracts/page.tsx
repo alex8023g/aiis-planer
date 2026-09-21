@@ -1,22 +1,239 @@
+import dayjs from 'dayjs';
+import Link from 'next/link';
+import { Fragment } from 'react';
+
 import { Header } from '@/components/Header';
+import type { ContractSource } from '@/generated/prisma/enums';
+import {
+  contractSourceLabels,
+  contractSources,
+  getContractCounts,
+  getContracts,
+  type ContractListItem,
+} from '@/lib/contracts';
 import { requireUser } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata = { title: 'Договоры' };
 
-/// Заглушка: раздел ещё не сделан, но ссылка на него в навигации уже есть —
-/// пусть ведёт на честное «в разработке», а не в 404.
-export default async function ContractsPage() {
+/// Пока в базе только 2026-й: реестры залиты скриптом scripts/extract_contracts.py.
+const REGISTRY_YEAR = 2026;
+
+const money = new Intl.NumberFormat('ru-RU', {
+  style: 'currency',
+  currency: 'RUB',
+  maximumFractionDigits: 0,
+});
+
+const date = (value: Date | null) =>
+  value ? dayjs(value).format('DD.MM.YYYY') : '—';
+
+/// Сумма договора или, если в реестре вместо неё текст, сам текст.
+function Amount({ row }: { row: ContractListItem }) {
+  if (row.amount === null) {
+    return (
+      <span className='text-neutral-500 dark:text-neutral-400'>
+        {row.amountNote ?? '—'}
+      </span>
+    );
+  }
+
+  return (
+    <>
+      <span className='font-medium whitespace-nowrap'>
+        {money.format(row.amount)}
+      </span>
+      {(row.amountNote || row.vatNote) && (
+        <div className='text-xs text-neutral-500 dark:text-neutral-400'>
+          {[row.amountNote, row.vatNote].filter(Boolean).join(', ')}
+        </div>
+      )}
+    </>
+  );
+}
+
+/// Этапы есть только у части договоров, поэтому лежат в раскрывающейся
+/// строке под основной: <details> обходится без клиентского компонента.
+function Stages({ row }: { row: ContractListItem }) {
+  return (
+    <tr className='border-b border-neutral-200 last:border-0 dark:border-neutral-800'>
+      <td colSpan={6} className='px-4 pb-3'>
+        <details className='text-sm'>
+          <summary className='cursor-pointer text-neutral-500 select-none hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100'>
+            Этапы: {row.stages.length}
+          </summary>
+          <ul className='mt-2 space-y-1 border-l border-neutral-200 pl-4 dark:border-neutral-800'>
+            {row.stages.map((stage) => (
+              <li key={stage.id} className='flex flex-wrap gap-x-3 gap-y-1'>
+                <span className='text-neutral-500 dark:text-neutral-400'>
+                  {stage.no}.
+                </span>
+                <span className='min-w-0 flex-1'>{stage.name}</span>
+                {stage.amount !== null && (
+                  <span className='whitespace-nowrap'>
+                    {money.format(stage.amount)}
+                  </span>
+                )}
+                <span className='whitespace-nowrap text-neutral-500 dark:text-neutral-400'>
+                  {stage.statusText ?? '—'}
+                  {stage.dueAt && ` · до ${date(stage.dueAt)}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      </td>
+    </tr>
+  );
+}
+
+export default async function ContractsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ source?: string }>;
+}) {
   const user = await requireUser();
+
+  const requested = (await searchParams).source;
+  /// Чужое значение в адресе не должно ронять страницу — просто показываем всё.
+  const source = contractSources.find((item) => item === requested);
+
+  const [rows, counts] = await Promise.all([
+    getContracts({ registryYear: REGISTRY_YEAR, source }),
+    getContractCounts(REGISTRY_YEAR),
+  ]);
+
+  const total = rows.reduce((sum, row) => sum + (row.amount ?? 0), 0);
+  const withoutAmount = rows.filter((row) => row.amount === null).length;
+
+  const tabs: {
+    key: ContractSource | undefined;
+    label: string;
+    count: number;
+  }[] = [
+    {
+      key: undefined,
+      label: 'Все',
+      count: Object.values(counts).reduce((sum, count) => sum + count, 0),
+    },
+    ...contractSources.map((key) => ({
+      key,
+      label: contractSourceLabels[key],
+      count: counts[key],
+    })),
+  ];
 
   return (
     <div className='min-h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100'>
       <Header user={user} current='contracts' />
       <main className='mx-auto p-6 sm:p-10'>
-        <p className='text-sm text-neutral-500 dark:text-neutral-400'>
-          Раздел в разработке.
+        <div className='mb-4 flex flex-wrap items-center gap-2'>
+          {tabs.map((tab) => {
+            const active = tab.key === source;
+            return (
+              <Link
+                key={tab.key ?? 'all'}
+                href={tab.key ? `/contracts?source=${tab.key}` : '/contracts'}
+                className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                  active
+                    ? 'border-neutral-900 bg-neutral-900 text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900'
+                    : 'border-neutral-200 bg-white hover:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:bg-neutral-800'
+                }`}
+              >
+                {tab.label}
+                <span
+                  className={
+                    active
+                      ? 'ml-1.5 opacity-60'
+                      : 'ml-1.5 text-neutral-500 dark:text-neutral-400'
+                  }
+                >
+                  {tab.count}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+
+        <p className='mb-4 text-sm text-neutral-500 dark:text-neutral-400'>
+          Договоров: {rows.length} · Сумма: {money.format(total)}
+          {withoutAmount > 0 && ` · без суммы в реестре: ${withoutAmount}`}
         </p>
+
+        <div className='overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900'>
+          <table className='w-full text-left text-sm'>
+            <thead className='text-xs text-neutral-500 dark:text-neutral-400'>
+              <tr className='border-b border-neutral-200 dark:border-neutral-800'>
+                <th className='px-4 py-3 font-medium'>Договор</th>
+                <th className='px-4 py-3 font-medium'>Контрагент</th>
+                <th className='px-4 py-3 font-medium'>Предмет</th>
+                <th className='px-4 py-3 font-medium'>Сумма</th>
+                <th className='px-4 py-3 font-medium'>Срок</th>
+                <th className='px-4 py-3 font-medium'>Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className='px-4 py-6 text-center text-neutral-500 dark:text-neutral-400'
+                  >
+                    Договоров за {REGISTRY_YEAR} год нет.
+                  </td>
+                </tr>
+              )}
+
+              {rows.map((row) => (
+                <Fragment key={row.id}>
+                  <tr
+                    className={
+                      row.stages.length > 0
+                        ? ''
+                        : 'border-b border-neutral-200 last:border-0 dark:border-neutral-800'
+                    }
+                  >
+                    <td className='px-4 py-3 align-top'>
+                      <div className='font-medium'>{row.number}</div>
+                      <div className='text-xs whitespace-nowrap text-neutral-500 dark:text-neutral-400'>
+                        {date(row.signedAt)} ·{' '}
+                        {contractSourceLabels[row.source]}
+                      </div>
+                    </td>
+                    <td className='px-4 py-3 align-top'>
+                      <div>{row.counterparty || '—'}</div>
+                      {row.objectName && (
+                        <div className='text-xs text-neutral-500 dark:text-neutral-400'>
+                          {row.objectName}
+                        </div>
+                      )}
+                    </td>
+                    <td className='max-w-md px-4 py-3 align-top'>
+                      {row.subject || '—'}
+                    </td>
+                    <td className='px-4 py-3 align-top'>
+                      <Amount row={row} />
+                    </td>
+                    <td className='px-4 py-3 align-top text-neutral-500 dark:text-neutral-400'>
+                      {row.endsAt ? date(row.endsAt) : (row.termText ?? '—')}
+                    </td>
+                    <td className='px-4 py-3 align-top text-neutral-500 dark:text-neutral-400'>
+                      <div className='whitespace-nowrap'>
+                        {row.statusText ?? row.originalState ?? '—'}
+                      </div>
+                      {/* Допсоглашение — про состояние договора, а не про сумму. */}
+                      {row.dsNote && (
+                        <div className='text-xs'>ДС: {row.dsNote}</div>
+                      )}
+                    </td>
+                  </tr>
+                  {row.stages.length > 0 && <Stages row={row} />}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </main>
     </div>
   );
