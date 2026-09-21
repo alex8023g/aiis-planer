@@ -63,7 +63,12 @@ export function SurveyTable({
                     colSpan={cell.colSpan}
                     /// Переносы строк внутри ячейки значимы: в опросе ими
                     /// разделены варианты решения.
-                    className='px-4 py-2 align-top whitespace-pre-line'
+                    className={cn(
+                      'px-4 py-2 whitespace-pre-line',
+                      cell.align === 'middle' ? 'align-middle' : 'align-top',
+                      cell.bordered &&
+                        'border border-neutral-200 dark:border-neutral-800',
+                    )}
                   >
                     {cell.v}
                   </td>

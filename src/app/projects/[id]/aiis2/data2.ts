@@ -1,3 +1,5 @@
+import type { Channel, ModemKind } from '@/lib/types';
+
 export type tiData = {
   id: string;
   tiNumber: string;
@@ -5,12 +7,14 @@ export type tiData = {
   currentMeter: {
     type: string;
     number: string;
-    isCompliant: boolean | undefined;
+    isCompliant: boolean;
+    hasModem: boolean | undefined;
   };
   newMeter: {
     type: string | undefined;
     number: string | undefined;
     isCompliant: true;
+    hasModem: boolean;
   } | null;
   tt:
     | {
@@ -23,23 +27,33 @@ export type tiData = {
   tn:
     | {
         type: string | [string, string, string] | undefined;
-        number: string | undefined;
+        number: string | [string, string, string] | undefined;
         ratio: string | undefined;
       }
     | null
     | undefined;
-  currentModem: {
-    kind: 'built-in' | 'external';
-  } | null;
-  newModem: {
-    kind: 'built-in' | 'external';
-    type: string | undefined | null;
+  uspd: {
+    type: string | undefined;
     number: string | undefined;
+  } | null;
+  sidePolling:
+    | {
+        description: string;
+      }
+    | null
+    | undefined;
+  // currentModem: {
+  //   kind: ModemKind;
+  // } | null;
+  newModem: {
+    kind: ModemKind;
+    type: string | undefined | null;
+    number: string | undefined | null;
   };
   connection: {
     meterAddress: string | undefined;
     port: string | undefined;
-    channel: 'gprs' | 'csd';
+    channel: Channel;
   };
   simCard: {
     number: string | undefined;
