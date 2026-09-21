@@ -509,3 +509,70 @@ model TisNotes {
   description String?
   tis         Ti[]
 }
+
+/// Откуда приехал договор: у каждого реестра свой файл и своя роль компании.
+enum ContractSource {
+  /// Реестр ЭПР Заказчик: мы заказчик, контрагент — исполнитель.
+  epr_customer
+  /// Реестр РН-Энерго: мы исполнитель, заказчик один — РН-Энерго.
+  rn_energo
+  /// Реестр СРО: мы исполнитель, заказчик у каждого договора свой.
+  sro
+}
+
+/// Строка реестра договоров. Источники разные, но набор полей общий;
+/// то, что не разложилось по колонкам, лежит в raw.
+model Contract {
+  id            String          @id @default(cuid())
+  source        ContractSource
+  /// Год листа в реестре, а не год подписания: они иногда расходятся.
+  registryYear  Int
+  number        String
+  /// Лист и номер строки в исходной книге: номер договора не уникален —
+  /// в реестрах один и тот же номер встречается у разных договоров.
+  sourceSheet   String
+  sourceRow     Int
+  signedAt      DateTime?
+  counterparty  String
+  objectName    String?
+  subject       String
+  /// null, если в реестре вместо суммы текст — тогда см. amountNote.
+  amount        Decimal?        @db.Decimal(14, 2)
+  amountNote    String?
+  vatNote       String?
+  termText      String?
+  startsAt      DateTime?
+  endsAt        DateTime?
+  statusText    String?
+  originalState String?
+  /// Исходная строка целиком: реестры грязные, без неё не перепроверить.
+  raw           Json
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  stages        ContractStage[]
+
+  @@unique([source, registryYear, sourceSheet, sourceRow])
+  @@index([source, registryYear])
+  @@index([number])
+  @@index([signedAt])
+  @@map("contract")
+}
+
+/// Этап договора. Есть только у РН-Энерго: там этапы вынесены на отдельные
+/// листы книги и связаны с реестром гиперссылками.
+model ContractStage {
+  id         String    @id @default(cuid())
+  contractId String
+  contract   Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  no         Int
+  name       String
+  /// Стоимость этапа: есть не на всех листах реестра.
+  amount     Decimal?  @db.Decimal(14, 2)
+  statusText String?
+  closedAt   DateTime?
+  dueAt      DateTime?
+
+  @@unique([contractId, no])
+  @@index([contractId])
+  @@map("contract_stage")
+}
