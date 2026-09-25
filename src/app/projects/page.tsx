@@ -1,8 +1,9 @@
+import { AddProjectDialog } from '@/components/AddProjectDialog';
 import { Header } from '@/components/Header';
 import { ProjectGantt, statusStyles } from '@/components/ProjectGantt';
 import { getDaysOff } from '@/lib/dayoff';
 import { canEditProject, getProjects } from '@/lib/projects';
-import { requireUser } from '@/lib/session';
+import { canEdit, requireUser } from '@/lib/session';
 import { TaskStatus, UserRole } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -22,6 +23,8 @@ export default async function AiisProjectsPage() {
         /// pending проектов не видит вовсе — «Проектов: 0» сказало бы ему
         /// неправду, будто их нет.
         meta={waiting ? undefined : `( ${projects.length} )`}
+        /// Создавать проекты может admin и editor; viewer'у и pending — нечего.
+        action={canEdit(user) && <AddProjectDialog />}
       />
       <main className='/max-w-4xl mx-auto p-6 sm:p-10'>
         {waiting ? (

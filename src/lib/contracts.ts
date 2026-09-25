@@ -1,16 +1,6 @@
 import { prisma } from '@/lib/prisma';
+import { contractSources } from '@/lib/contract-sources';
 import type { ContractSource } from '@/generated/prisma/enums';
-
-/// Названия реестров. Ключи совпадают с enum ContractSource в схеме.
-export const contractSourceLabels: Record<ContractSource, string> = {
-  epr_customer: 'ЭПР (мы заказчик)',
-  rn_energo: 'РН-Энерго',
-  sro: 'СРО',
-};
-
-export const contractSources = Object.keys(
-  contractSourceLabels,
-) as ContractSource[];
 
 export type ContractStageItem = {
   id: string;

@@ -2,23 +2,25 @@ import dayjs from 'dayjs';
 import Link from 'next/link';
 import { Fragment } from 'react';
 
+import { AddContractDialog } from '@/components/AddContractDialog';
+import { ContractRowMenu } from '@/components/ContractRowMenu';
 import { Header } from '@/components/Header';
 import type { ContractSource } from '@/generated/prisma/enums';
 import {
   contractSourceLabels,
   contractSources,
+  REGISTRY_YEAR,
+} from '@/lib/contract-sources';
+import {
   getContractCounts,
   getContracts,
   type ContractListItem,
 } from '@/lib/contracts';
-import { requireUser } from '@/lib/session';
+import { canEdit, requireUser } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata = { title: 'Договоры' };
-
-/// Пока в базе только 2026-й: реестры залиты скриптом scripts/extract_contracts.py.
-const REGISTRY_YEAR = 2026;
 
 const money = new Intl.NumberFormat('ru-RU', {
   style: 'currency',
@@ -58,7 +60,7 @@ function Amount({ row }: { row: ContractListItem }) {
 function Stages({ row }: { row: ContractListItem }) {
   return (
     <tr className='border-b border-neutral-200 last:border-0 dark:border-neutral-800'>
-      <td colSpan={6} className='px-4 pb-3'>
+      <td colSpan={7} className='px-4 pb-3'>
         <details className='text-sm'>
           <summary className='cursor-pointer text-neutral-500 select-none hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100'>
             Этапы: {row.stages.length}
@@ -94,6 +96,9 @@ export default async function ContractsPage({
   searchParams: Promise<{ source?: string }>;
 }) {
   const user = await requireUser();
+  /// Меню в строке — только тем, кто вправе менять. Право проверяется и в
+  /// экшене: спрятанной кнопки мало (см. src/app/contracts/actions.ts).
+  const editable = canEdit(user);
 
   const requested = (await searchParams).source;
   /// Чужое значение в адресе не должно ронять страницу — просто показываем всё.
@@ -154,6 +159,12 @@ export default async function ContractsPage({
               </Link>
             );
           })}
+          {/* ml-auto прижимает кнопку к правому краю ряда вкладок. */}
+          {editable && (
+            <div className='ml-auto'>
+              <AddContractDialog defaultSource={source ?? contractSources[0]} />
+            </div>
+          )}
         </div>
 
         <p className='mb-4 text-sm text-neutral-500 dark:text-neutral-400'>
@@ -171,13 +182,16 @@ export default async function ContractsPage({
                 <th className='px-4 py-3 font-medium'>Сумма</th>
                 <th className='px-4 py-3 font-medium'>Срок</th>
                 <th className='px-4 py-3 font-medium'>Статус</th>
+                <th className='px-4 py-3'>
+                  <span className='sr-only'>Действия</span>
+                </th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className='px-4 py-6 text-center text-neutral-500 dark:text-neutral-400'
                   >
                     Договоров за {REGISTRY_YEAR} год нет.
@@ -226,6 +240,9 @@ export default async function ContractsPage({
                       {row.dsNote && (
                         <div className='text-xs'>ДС: {row.dsNote}</div>
                       )}
+                    </td>
+                    <td className='px-4 py-3 align-top'>
+                      {editable && <ContractRowMenu contract={row} />}
                     </td>
                   </tr>
                   {row.stages.length > 0 && <Stages row={row} />}
