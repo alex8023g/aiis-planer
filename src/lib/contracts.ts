@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import type { ContractFileItem } from '@/lib/contract-files';
 import { contractSources } from '@/lib/contract-sources';
 import type { ContractSource } from '@/generated/prisma/enums';
 
@@ -31,6 +32,9 @@ export type ContractListItem = {
   statusText: string | null;
   originalState: string | null;
   stages: ContractStageItem[];
+  /// Только метаданные — они лёгкие, и тянуть их сразу со строкой дешевле, чем
+  /// ходить за ними отдельно при каждом открытии диалога файлов.
+  files: ContractFileItem[];
 };
 
 /// Prisma отдаёт деньги как Decimal, а не как number: до React его доводить
@@ -50,7 +54,20 @@ export async function getContracts(options: {
       registryYear: options.registryYear,
       ...(options.source ? { source: options.source } : {}),
     },
-    include: { stages: { orderBy: { no: 'asc' } } },
+    include: {
+      stages: { orderBy: { no: 'asc' } },
+      files: {
+        select: {
+          id: true,
+          fileName: true,
+          contentType: true,
+          size: true,
+          uploadedBy: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
     orderBy: [
       /// nulls: 'last' обязателен: в Postgres при DESC пустые даты идут первыми,
       /// а договоры без даты в реестре — не самые свежие, а просто незаполненные.

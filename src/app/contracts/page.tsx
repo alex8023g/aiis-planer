@@ -1,4 +1,5 @@
 import dayjs from 'dayjs';
+import { Paperclip } from 'lucide-react';
 import Link from 'next/link';
 import { Fragment } from 'react';
 
@@ -210,9 +211,22 @@ export default async function ContractsPage({
                   >
                     <td className='px-4 py-3 align-top'>
                       <div className='font-medium'>{row.number}</div>
-                      <div className='text-xs whitespace-nowrap text-neutral-500 dark:text-neutral-400'>
-                        {date(row.signedAt)} ·{' '}
-                        {contractSourceLabels[row.source]}
+                      <div className='flex items-center gap-2 text-xs whitespace-nowrap text-neutral-500 dark:text-neutral-400'>
+                        <span>
+                          {date(row.signedAt)} ·{' '}
+                          {contractSourceLabels[row.source]}
+                        </span>
+                        {/* Скрепка — единственный признак, что к договору
+                            приложены сканы: сами файлы в меню строки. */}
+                        {row.files.length > 0 && (
+                          <span
+                            className='flex items-center gap-0.5'
+                            title={`Файлов: ${row.files.length}`}
+                          >
+                            <Paperclip className='size-3' />
+                            {row.files.length}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className='px-4 py-3 align-top'>

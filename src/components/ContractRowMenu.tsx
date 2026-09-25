@@ -1,10 +1,11 @@
 'use client';
 
-import { EllipsisVertical, Pencil } from 'lucide-react';
+import { EllipsisVertical, Paperclip, Pencil } from 'lucide-react';
 import { useState } from 'react';
 
 import { updateContract } from '@/app/contracts/actions';
 import { ContractDialog } from '@/components/ContractDialog';
+import { ContractFilesDialog } from '@/components/ContractFilesDialog';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -24,6 +25,7 @@ import type { ContractListItem } from '@/lib/contracts';
 /// а он на неудачу не закрывается и показывает текст сам.
 export function ContractRowMenu({ contract }: { contract: ContractListItem }) {
   const [editOpen, setEditOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
 
   function handleUpdate(fields: ContractFormFields) {
     return updateContract(contract.id, fields);
@@ -48,6 +50,15 @@ export function ContractRowMenu({ contract }: { contract: ContractListItem }) {
             <Pencil />
             Редактировать
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setFilesOpen(true)}>
+            <Paperclip />
+            Файлы
+            {contract.files.length > 0 && (
+              <span className='ml-auto pl-2 text-muted-foreground'>
+                {contract.files.length}
+              </span>
+            )}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -58,6 +69,14 @@ export function ContractRowMenu({ contract }: { contract: ContractListItem }) {
         submitLabel='Сохранить'
         initialValues={contractToFormFields(contract)}
         onSubmit={handleUpdate}
+      />
+
+      <ContractFilesDialog
+        contractId={contract.id}
+        contractNumber={contract.number}
+        files={contract.files}
+        open={filesOpen}
+        onOpenChange={setFilesOpen}
       />
     </div>
   );

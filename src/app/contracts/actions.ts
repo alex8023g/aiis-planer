@@ -9,6 +9,8 @@ import {
   MANUAL_SHEET,
   REGISTRY_YEAR,
 } from '@/lib/contract-sources';
+import { MAX_FILE_SIZE } from '@/lib/contract-files';
+import { BUCKET, ensureBucket, minio, objectKey } from '@/lib/minio';
 import { prisma } from '@/lib/prisma';
 import { canEdit, requireUser } from '@/lib/session';
 
@@ -219,4 +221,113 @@ export async function createContract(
   revalidatePath('/contracts');
 
   return { ok: true, id: contract.id };
+}
+
+/// Что кладут в договорную папку: скан, счёт, акт. Список закрытый — бакет
+/// отдаётся тем же приложением, и превращать его в файлопомойку незачем.
+const allowedTypes = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/heic',
+  'image/tiff',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+]);
+
+export async function uploadContractFile(
+  contractId: string,
+  formData: FormData,
+): Promise<ContractActionResult> {
+  const user = await requireUser();
+
+  if (!canEdit(user)) {
+    return { ok: false, error: readOnlyError };
+  }
+
+  const file = formData.get('file');
+
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: 'Выберите файл' };
+  }
+
+  if (file.size > MAX_FILE_SIZE) {
+    return { ok: false, error: 'Файл больше 25 МБ' };
+  }
+
+  if (!allowedTypes.has(file.type)) {
+    return { ok: false, error: `Недопустимый тип файла: ${file.type || '—'}` };
+  }
+
+  /// Ссылаться на несуществующий договор нельзя: строка бы не создалась, а
+  /// объект в бакете уже лежал бы.
+  const contract = await prisma.contract.findUnique({
+    where: { id: contractId },
+    select: { id: true },
+  });
+
+  if (!contract) {
+    return { ok: false, error: 'Договор не найден' };
+  }
+
+  await ensureBucket();
+
+  const key = objectKey(contractId, file.name);
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  await minio.putObject(BUCKET, key, buffer, buffer.length, {
+    'Content-Type': file.type,
+  });
+
+  try {
+    await prisma.contractFile.create({
+      data: {
+        contractId,
+        objectKey: key,
+        fileName: file.name,
+        contentType: file.type,
+        size: buffer.length,
+        uploadedBy: user.email,
+      },
+    });
+  } catch (error) {
+    /// База не приняла строку — объект в бакете больше никому не нужен, и
+    /// найти его потом будет нечем: ссылки на него нет нигде.
+    await minio.removeObject(BUCKET, key).catch(() => {});
+    throw error;
+  }
+
+  revalidatePath('/contracts');
+
+  return { ok: true };
+}
+
+export async function deleteContractFile(
+  fileId: string,
+): Promise<ContractActionResult> {
+  const user = await requireUser();
+
+  if (!canEdit(user)) {
+    return { ok: false, error: readOnlyError };
+  }
+
+  const file = await prisma.contractFile.findUnique({
+    where: { id: fileId },
+    select: { objectKey: true },
+  });
+
+  if (!file) {
+    return { ok: false, error: 'Файл не найден' };
+  }
+
+  /// Сначала объект, потом строка: если упадёт удаление из бакета, ссылка
+  /// останется рабочей. В обратном порядке получился бы файл-призрак.
+  await minio.removeObject(BUCKET, file.objectKey);
+  await prisma.contractFile.delete({ where: { id: fileId } });
+
+  revalidatePath('/contracts');
+
+  return { ok: true };
 }
