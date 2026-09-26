@@ -2,7 +2,7 @@
 /// src/app/api/contracts/files/[id]/route.ts.
 ///
 /// Модуль намеренно ничего не импортирует: его тянет и клиентский
-/// ContractFilesDialog, и серверный экшен, где 'use server' разрешает
+/// ContractDialog, и серверный экшен, где 'use server' разрешает
 /// экспортировать наружу только асинхронные функции.
 export type ContractFileItem = {
   id: string;

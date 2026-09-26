@@ -33,7 +33,7 @@ export type ContractListItem = {
   originalState: string | null;
   stages: ContractStageItem[];
   /// Только метаданные — они лёгкие, и тянуть их сразу со строкой дешевле, чем
-  /// ходить за ними отдельно при каждом открытии диалога файлов.
+  /// ходить за ними отдельно: они нужны и колонке «Файлы», и диалогу правки.
   files: ContractFileItem[];
 };
 
