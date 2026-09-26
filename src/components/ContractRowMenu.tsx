@@ -1,7 +1,6 @@
 'use client';
 
 import { EllipsisVertical, Pencil } from 'lucide-react';
-import { useState } from 'react';
 
 import { updateContract } from '@/app/contracts/actions';
 import { ContractDialog } from '@/components/ContractDialog';
@@ -15,6 +14,7 @@ import {
 import { contractToFormFields } from '@/lib/contract-form';
 import type { ContractFormFields } from '@/lib/contract-form';
 import type { ContractListItem } from '@/lib/contracts';
+import { useContractSelection } from '@/lib/use-contract-selection';
 
 /// Удаления в меню нет намеренно: договоры заливает импорт реестра
 /// (scripts/extract_contracts.py), и удалённая строка вернулась бы при
@@ -23,7 +23,10 @@ import type { ContractListItem } from '@/lib/contracts';
 /// Своего состояния ошибки здесь нет: единственное действие открывает диалог,
 /// а он на неудачу не закрывается и показывает текст сам.
 export function ContractRowMenu({ contract }: { contract: ContractListItem }) {
-  const [editOpen, setEditOpen] = useState(false);
+  /// Открыт ли диалог, решает адрес (?contract=<id>&edit=1): его открывает и
+  /// кнопка «Редактировать» над таблицей (EditSelectedContractButton).
+  const { selectedId, editing, openEdit, closeEdit } = useContractSelection();
+  const editOpen = editing && selectedId === contract.id;
 
   async function handleUpdate(fields: ContractFormFields) {
     const result = await updateContract(contract.id, fields);
@@ -46,7 +49,7 @@ export function ContractRowMenu({ contract }: { contract: ContractListItem }) {
           }
         />
         <DropdownMenuContent align='end'>
-          <DropdownMenuItem onClick={() => setEditOpen(true)}>
+          <DropdownMenuItem onClick={() => openEdit(contract.id)}>
             <Pencil />
             Редактировать
           </DropdownMenuItem>
@@ -55,7 +58,7 @@ export function ContractRowMenu({ contract }: { contract: ContractListItem }) {
 
       <ContractDialog
         open={editOpen}
-        onOpenChange={setEditOpen}
+        onOpenChange={(open) => (open ? openEdit(contract.id) : closeEdit())}
         title={`Редактирование: ${contract.number}`}
         submitLabel='Сохранить'
         initialValues={contractToFormFields(contract)}

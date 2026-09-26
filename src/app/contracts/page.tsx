@@ -5,8 +5,10 @@ import { Fragment } from 'react';
 
 import { AddContractDialog } from '@/components/AddContractDialog';
 import { ContractRowMenu } from '@/components/ContractRowMenu';
+import { EditSelectedContractButton } from '@/components/EditSelectedContractButton';
 import { FileBadge } from '@/components/FileBadge';
 import { Header } from '@/components/Header';
+import { SelectableRow, SelectableTableBody } from '@/components/SelectableRow';
 import type { ContractSource } from '@/generated/prisma/enums';
 import { openHref, splitFileName } from '@/lib/contract-files';
 import {
@@ -108,7 +110,10 @@ function Files({ row }: { row: ContractListItem }) {
 /// строке под основной: <details> обходится без клиентского компонента.
 function Stages({ row }: { row: ContractListItem }) {
   return (
-    <tr className='border-b border-neutral-200 last:border-0 dark:border-neutral-800'>
+    <SelectableRow
+      rowId={row.id}
+      className='border-b border-neutral-200 last:border-0 dark:border-neutral-800'
+    >
       <td colSpan={8} className='px-4 pb-3'>
         <details className='text-sm'>
           <summary className='cursor-pointer text-neutral-500 select-none hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100'>
@@ -135,7 +140,7 @@ function Stages({ row }: { row: ContractListItem }) {
           </ul>
         </details>
       </td>
-    </tr>
+    </SelectableRow>
   );
 }
 
@@ -180,9 +185,13 @@ export default async function ContractsPage({
 
   return (
     <div className='min-h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100'>
-      <Header user={user} current='contracts' />
-      <main className='mx-auto p-6 sm:p-10'>
-        <div className='mb-4 flex flex-wrap items-center gap-2'>
+      {/* Шапка и вкладки прилипают вместе, одним блоком: так вкладкам не нужно
+          знать высоту шапки, а она меняется, когда шапка переносится на
+          узком экране. Собственный sticky у Header внутри блока ни на что не
+          влияет. */}
+      <div className='sticky top-0 z-20'>
+        <Header user={user} current='contracts' />
+        <div className='flex flex-wrap items-center gap-2 border-b border-neutral-200 bg-neutral-50/80 px-6 py-3 backdrop-blur sm:px-10 dark:border-neutral-800 dark:bg-neutral-950/80'>
           {tabs.map((tab) => {
             const active = tab.key === source;
             return (
@@ -208,14 +217,16 @@ export default async function ContractsPage({
               </Link>
             );
           })}
-          {/* ml-auto прижимает кнопку к правому краю ряда вкладок. */}
+          {/* ml-auto прижимает кнопки к правому краю ряда вкладок. */}
           {editable && (
-            <div className='ml-auto'>
+            <div className='ml-auto flex items-center gap-2'>
+              <EditSelectedContractButton />
               <AddContractDialog defaultSource={source ?? contractSources[0]} />
             </div>
           )}
         </div>
-
+      </div>
+      <main className='mx-auto p-6 sm:p-10'>
         <p className='mb-4 text-sm text-neutral-500 dark:text-neutral-400'>
           Договоров: {rows.length} · Сумма: {money.format(total)}
           {withoutAmount > 0 && ` · без суммы в реестре: ${withoutAmount}`}
@@ -239,7 +250,7 @@ export default async function ContractsPage({
                 </th>
               </tr>
             </thead>
-            <tbody>
+            <SelectableTableBody>
               {rows.length === 0 && (
                 <tr>
                   <td
@@ -253,7 +264,8 @@ export default async function ContractsPage({
 
               {rows.map((row) => (
                 <Fragment key={row.id}>
-                  <tr
+                  <SelectableRow
+                    rowId={row.id}
                     className={
                       row.stages.length > 0
                         ? ''
@@ -299,11 +311,11 @@ export default async function ContractsPage({
                     <td className='px-4 py-3 align-top'>
                       {editable && <ContractRowMenu contract={row} />}
                     </td>
-                  </tr>
+                  </SelectableRow>
                   {row.stages.length > 0 && <Stages row={row} />}
                 </Fragment>
               ))}
-            </tbody>
+            </SelectableTableBody>
           </table>
         </div>
       </main>
