@@ -27,8 +27,10 @@ export function ContractRowMenu({ contract }: { contract: ContractListItem }) {
   const [editOpen, setEditOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
 
-  function handleUpdate(fields: ContractFormFields) {
-    return updateContract(contract.id, fields);
+  async function handleUpdate(fields: ContractFormFields) {
+    const result = await updateContract(contract.id, fields);
+
+    return result.ok ? { ok: true as const, id: contract.id } : result;
   }
 
   return (
@@ -69,6 +71,7 @@ export function ContractRowMenu({ contract }: { contract: ContractListItem }) {
         submitLabel='Сохранить'
         initialValues={contractToFormFields(contract)}
         onSubmit={handleUpdate}
+        files={contract.files}
       />
 
       <ContractFilesDialog

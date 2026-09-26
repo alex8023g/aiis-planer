@@ -101,7 +101,7 @@ export default async function HomePage() {
               icon={FileText}
               title='Договоры'
               description='Договоры и дополнительные соглашения'
-              soon
+              // soon
             />
             <SectionLink
               href='/tenders'

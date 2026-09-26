@@ -28,3 +28,44 @@ export function formatSize(bytes: number): string {
 
   return `${(kb / 1024).toFixed(1)} МБ`;
 }
+
+/// .docx браузер показать не умеет — его рисует docx-preview на странице
+/// src/app/contracts/files/[id]/preview. Старый .doc — другой, двоичный
+/// формат, библиотека его не читает, поэтому он по-прежнему скачивается.
+export const DOCX_TYPE =
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/// Что браузер умеет показать сам. Word, Excel, HEIC и TIFF он бы всё равно
+/// скачал, только через пустую вкладку, — их открываем прямым скачиванием.
+const previewableTypes = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+]);
+
+/// Куда ведёт клик по имени: PDF и картинки браузер показывает сам, .docx
+/// рисует страница просмотра, остальное — null, то есть просто скачать.
+export function openHref(file: { id: string; contentType: string }) {
+  if (previewableTypes.has(file.contentType)) {
+    return `/api/contracts/files/${file.id}?inline=1`;
+  }
+
+  if (file.contentType === DOCX_TYPE) {
+    return `/contracts/files/${file.id}/preview`;
+  }
+
+  return null;
+}
+
+/// Имя и расширение порознь: расширение уходит в цветную плашку, и дублировать
+/// его в обрезанном имени незачем. Для людей «DOCX» понятнее MIME-строки.
+export function splitFileName(fileName: string) {
+  const dot = fileName.lastIndexOf('.');
+
+  return dot > 0
+    ? {
+        base: fileName.slice(0, dot),
+        ext: fileName.slice(dot + 1).toUpperCase(),
+      }
+    : { base: fileName, ext: '' };
+}

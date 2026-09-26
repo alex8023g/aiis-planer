@@ -1,12 +1,14 @@
 import dayjs from 'dayjs';
-import { Paperclip } from 'lucide-react';
+import { Download } from 'lucide-react';
 import Link from 'next/link';
 import { Fragment } from 'react';
 
 import { AddContractDialog } from '@/components/AddContractDialog';
 import { ContractRowMenu } from '@/components/ContractRowMenu';
+import { FileBadge } from '@/components/FileBadge';
 import { Header } from '@/components/Header';
 import type { ContractSource } from '@/generated/prisma/enums';
+import { openHref, splitFileName } from '@/lib/contract-files';
 import {
   contractSourceLabels,
   contractSources,
@@ -56,12 +58,58 @@ function Amount({ row }: { row: ContractListItem }) {
   );
 }
 
+/// Ссылки ведут на роут скачивания, а не в MinIO: он проверяет сессию, и
+/// файлы видны всем, кто вошёл, — в отличие от меню строки, которое только для
+/// редакторов.
+function Files({ row }: { row: ContractListItem }) {
+  if (row.files.length === 0) {
+    return <span className='text-neutral-500 dark:text-neutral-400'>—</span>;
+  }
+
+  return (
+    <ul className='w-44 space-y-1.5'>
+      {row.files.map((file) => {
+        const { base } = splitFileName(file.fileName);
+        const href = `/api/contracts/files/${file.id}`;
+        const open = openHref(file);
+
+        return (
+          <li key={file.id} className='flex items-center gap-2'>
+            <FileBadge fileName={file.fileName} />
+            <a
+              href={open ?? href}
+              {...(open && {
+                target: '_blank',
+                rel: 'noopener noreferrer',
+              })}
+              title={
+                open ? `Открыть: ${file.fileName}` : `Скачать: ${file.fileName}`
+              }
+              className='min-w-0 flex-1 truncate text-neutral-800 underline-offset-2 hover:underline dark:text-neutral-200'
+            >
+              {base}
+            </a>
+            <a
+              href={href}
+              title='Скачать'
+              aria-label={`Скачать ${file.fileName}`}
+              className='shrink-0 rounded p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-500 dark:hover:bg-neutral-800 dark:hover:text-neutral-100'
+            >
+              <Download className='size-3.5' />
+            </a>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /// Этапы есть только у части договоров, поэтому лежат в раскрывающейся
 /// строке под основной: <details> обходится без клиентского компонента.
 function Stages({ row }: { row: ContractListItem }) {
   return (
     <tr className='border-b border-neutral-200 last:border-0 dark:border-neutral-800'>
-      <td colSpan={7} className='px-4 pb-3'>
+      <td colSpan={8} className='px-4 pb-3'>
         <details className='text-sm'>
           <summary className='cursor-pointer text-neutral-500 select-none hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100'>
             Этапы: {row.stages.length}
@@ -173,7 +221,9 @@ export default async function ContractsPage({
           {withoutAmount > 0 && ` · без суммы в реестре: ${withoutAmount}`}
         </p>
 
-        <div className='overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900'>
+        {/* relative обязателен: иначе абсолютный sr-only в шапке таблицы не
+            обрезается overflow-x-auto и растягивает всю страницу вширь. */}
+        <div className='relative overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900'>
           <table className='w-full text-left text-sm'>
             <thead className='text-xs text-neutral-500 dark:text-neutral-400'>
               <tr className='border-b border-neutral-200 dark:border-neutral-800'>
@@ -183,6 +233,7 @@ export default async function ContractsPage({
                 <th className='px-4 py-3 font-medium'>Сумма</th>
                 <th className='px-4 py-3 font-medium'>Срок</th>
                 <th className='px-4 py-3 font-medium'>Статус</th>
+                <th className='px-4 py-3 font-medium'>Файлы</th>
                 <th className='px-4 py-3'>
                   <span className='sr-only'>Действия</span>
                 </th>
@@ -192,7 +243,7 @@ export default async function ContractsPage({
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className='px-4 py-6 text-center text-neutral-500 dark:text-neutral-400'
                   >
                     Договоров за {REGISTRY_YEAR} год нет.
@@ -211,22 +262,9 @@ export default async function ContractsPage({
                   >
                     <td className='px-4 py-3 align-top'>
                       <div className='font-medium'>{row.number}</div>
-                      <div className='flex items-center gap-2 text-xs whitespace-nowrap text-neutral-500 dark:text-neutral-400'>
-                        <span>
-                          {date(row.signedAt)} ·{' '}
-                          {contractSourceLabels[row.source]}
-                        </span>
-                        {/* Скрепка — единственный признак, что к договору
-                            приложены сканы: сами файлы в меню строки. */}
-                        {row.files.length > 0 && (
-                          <span
-                            className='flex items-center gap-0.5'
-                            title={`Файлов: ${row.files.length}`}
-                          >
-                            <Paperclip className='size-3' />
-                            {row.files.length}
-                          </span>
-                        )}
+                      <div className='text-xs whitespace-nowrap text-neutral-500 dark:text-neutral-400'>
+                        {date(row.signedAt)} ·{' '}
+                        {contractSourceLabels[row.source]}
                       </div>
                     </td>
                     <td className='px-4 py-3 align-top'>
@@ -246,14 +284,17 @@ export default async function ContractsPage({
                     <td className='px-4 py-3 align-top text-neutral-500 dark:text-neutral-400'>
                       {row.endsAt ? date(row.endsAt) : (row.termText ?? '—')}
                     </td>
-                    <td className='px-4 py-3 align-top text-neutral-500 dark:text-neutral-400'>
-                      <div className='whitespace-nowrap'>
-                        {row.statusText ?? row.originalState ?? '—'}
-                      </div>
+                    {/* Статусы в реестре бывают длиной в предложение: в одну
+                        строку они растягивали колонку на полтаблицы. */}
+                    <td className='max-w-56 min-w-32 px-4 py-3 align-top text-neutral-500 dark:text-neutral-400'>
+                      <div>{row.statusText ?? row.originalState ?? '—'}</div>
                       {/* Допсоглашение — про состояние договора, а не про сумму. */}
                       {row.dsNote && (
                         <div className='text-xs'>ДС: {row.dsNote}</div>
                       )}
+                    </td>
+                    <td className='px-4 py-3 align-top'>
+                      <Files row={row} />
                     </td>
                     <td className='px-4 py-3 align-top'>
                       {editable && <ContractRowMenu contract={row} />}

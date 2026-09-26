@@ -19,6 +19,8 @@ export async function GET(
   }
 
   const { id } = await params;
+  /// ?inline=1 — открыть во вкладке (PDF, картинки), без него — скачать.
+  const inline = new URL(request.url).searchParams.get('inline') === '1';
 
   const file = await prisma.contractFile.findUnique({
     where: { id },
@@ -37,9 +39,12 @@ export async function GET(
       'Content-Length': String(file.size),
       /// filename* с кодировкой UTF-8: имена договоров русские, а голый
       /// filename= по RFC 6266 допускает только latin1.
-      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(
+      'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(
         file.fileName,
       )}`,
+      /// Файл открывается на нашем домене, поэтому браузеру нельзя угадывать
+      /// тип по содержимому: иначе загруженный «PDF» мог бы выполниться как HTML.
+      'X-Content-Type-Options': 'nosniff',
     },
   });
 }
