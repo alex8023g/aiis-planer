@@ -3,12 +3,15 @@ import { Download } from 'lucide-react';
 import Link from 'next/link';
 import { Fragment } from 'react';
 
-import { AddContractDialog } from '@/components/AddContractDialog';
-import { ContractRowMenu } from '@/components/ContractRowMenu';
-import { EditSelectedContractButton } from '@/components/EditSelectedContractButton';
-import { FileBadge } from '@/components/FileBadge';
+import { AddContractDialog } from '@/components/forContractsPage/AddContractDialog';
+import { ContractRowMenu } from '@/components/forContractsPage/ContractRowMenu';
+import { EditSelectedContractButton } from '@/components/forContractsPage/EditSelectedContractButton';
+import { FileBadge } from '@/components/forContractsPage/FileBadge';
 import { Header } from '@/components/Header';
-import { SelectableRow, SelectableTableBody } from '@/components/SelectableRow';
+import {
+  SelectableRow,
+  SelectableTableBody,
+} from '@/components/forContractsPage/SelectableRow';
 import type { ContractSource } from '@/generated/prisma/enums';
 import { openHref, splitFileName } from '@/lib/contract-files';
 import {

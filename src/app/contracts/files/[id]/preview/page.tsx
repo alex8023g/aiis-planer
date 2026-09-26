@@ -1,7 +1,7 @@
 import { Download } from 'lucide-react';
 import { notFound, redirect } from 'next/navigation';
 
-import { DocxPreview } from '@/components/DocxPreview';
+import { DocxPreview } from '@/components/forContractsPage/DocxPreview';
 import { DOCX_TYPE } from '@/lib/contract-files';
 import { prisma } from '@/lib/prisma';
 import { requireUser } from '@/lib/session';

@@ -14,7 +14,7 @@ import {
   deleteContractFile,
   uploadContractFile,
 } from '@/app/contracts/actions';
-import { FileBadge } from '@/components/FileBadge';
+import { FileBadge } from '@/components/forContractsPage/FileBadge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,

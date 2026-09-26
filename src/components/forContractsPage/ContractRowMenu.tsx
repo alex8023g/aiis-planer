@@ -3,7 +3,7 @@
 import { EllipsisVertical, Pencil } from 'lucide-react';
 
 import { updateContract } from '@/app/contracts/actions';
-import { ContractDialog } from '@/components/ContractDialog';
+import { ContractDialog } from '@/components/forContractsPage/ContractDialog';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -14,7 +14,7 @@ import {
 import { contractToFormFields } from '@/lib/contract-form';
 import type { ContractFormFields } from '@/lib/contract-form';
 import type { ContractListItem } from '@/lib/contracts';
-import { useContractSelection } from '@/lib/use-contract-selection';
+import { useContractSelection } from '@/components/forContractsPage/useContractSelection';
 
 /// Удаления в меню нет намеренно: договоры заливает импорт реестра
 /// (scripts/extract_contracts.py), и удалённая строка вернулась бы при

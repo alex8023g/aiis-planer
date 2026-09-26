@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 import { createContract } from '@/app/contracts/actions';
-import { ContractDialog } from '@/components/ContractDialog';
+import { ContractDialog } from '@/components/forContractsPage/ContractDialog';
 import { Button } from '@/components/ui/button';
 import type { ContractSource } from '@/generated/prisma/enums';
 import { newContractFormFields } from '@/lib/contract-form';

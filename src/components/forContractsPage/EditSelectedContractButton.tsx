@@ -3,7 +3,7 @@
 import { Pencil } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { useContractSelection } from '@/lib/use-contract-selection';
+import { useContractSelection } from '@/components/forContractsPage/useContractSelection';
 
 /// Кнопка над таблицей. Своего диалога и данных договора у неё нет: она ставит
 /// в адрес &edit=1, и диалог открывает строка выбранного договора

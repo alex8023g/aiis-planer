@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 
-import { useContractSelection } from '@/lib/use-contract-selection';
+import { useContractSelection } from '@/components/forContractsPage/useContractSelection';
 
 const SelectionContext = createContext<{
   selectedId: string | null;
