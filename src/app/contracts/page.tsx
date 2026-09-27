@@ -5,6 +5,7 @@ import { Fragment } from 'react';
 
 import { AddContractDialog } from '@/components/forContractsPage/AddContractDialog';
 import { ContractDialogWrapper } from '@/components/forContractsPage/ContractDialogWrapper';
+import { ContractSearch } from '@/components/forContractsPage/ContractSearch';
 import { EditSelectedContractButton } from '@/components/forContractsPage/EditSelectedContractButton';
 import { FileBadge } from '@/components/forContractsPage/FileBadge';
 import { Header } from '@/components/Header';
@@ -150,20 +151,21 @@ function Stages({ row }: { row: ContractListItem }) {
 export default async function ContractsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ source?: string }>;
+  searchParams: Promise<{ source?: string; q?: string }>;
 }) {
   const user = await requireUser();
   /// Меню в строке — только тем, кто вправе менять. Право проверяется и в
   /// экшене: спрятанной кнопки мало (см. src/app/contracts/actions.ts).
   const editable = canEdit(user);
 
-  const requested = (await searchParams).source;
+  const { source: requested, q: rawQuery } = await searchParams;
+  const q = rawQuery?.trim() || undefined;
   /// Чужое значение в адресе не должно ронять страницу — просто показываем всё.
   const source = contractSources.find((item) => item === requested);
 
   const [rows, counts] = await Promise.all([
-    getContracts({ registryYear: REGISTRY_YEAR, source }),
-    getContractCounts(REGISTRY_YEAR),
+    getContracts({ registryYear: REGISTRY_YEAR, source, q }),
+    getContractCounts(REGISTRY_YEAR, q),
   ]);
 
   const total = rows.reduce((sum, row) => sum + (row.amount ?? 0), 0);
@@ -197,10 +199,15 @@ export default async function ContractsPage({
         <div className='flex flex-wrap items-center gap-2 border-b border-neutral-200 bg-neutral-50/80 px-6 py-3 backdrop-blur sm:px-10 dark:border-neutral-800 dark:bg-neutral-950/80'>
           {tabs.map((tab) => {
             const active = tab.key === source;
+            /// Поиск переживает смену вкладки.
+            const params = new URLSearchParams();
+            if (tab.key) params.set('source', tab.key);
+            if (q) params.set('q', q);
+            const query = params.toString();
             return (
               <Link
                 key={tab.key ?? 'all'}
-                href={tab.key ? `/contracts?source=${tab.key}` : '/contracts'}
+                href={query ? `/contracts?${query}` : '/contracts'}
                 className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
                   active
                     ? 'border-neutral-900 bg-neutral-900 text-white dark:border-neutral-100 dark:bg-neutral-100 dark:text-neutral-900'
@@ -220,6 +227,7 @@ export default async function ContractsPage({
               </Link>
             );
           })}
+          <ContractSearch />
           {/* ml-auto прижимает кнопки к правому краю ряда вкладок. */}
           {editable && (
             <div className='ml-auto flex items-center gap-2'>
@@ -257,7 +265,9 @@ export default async function ContractsPage({
                     colSpan={7}
                     className='px-4 py-6 text-center text-neutral-500 dark:text-neutral-400'
                   >
-                    Договоров за {REGISTRY_YEAR} год нет.
+                    {q
+                      ? `Ничего не найдено по запросу «${q}».`
+                      : `Договоров за ${REGISTRY_YEAR} год нет.`}
                   </td>
                 </tr>
               )}

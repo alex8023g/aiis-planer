@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import type { ContractFileItem } from '@/lib/contract-files';
 import { contractSources } from '@/lib/contract-sources';
+import type { Prisma } from '@/generated/prisma/client';
 import type { ContractSource } from '@/generated/prisma/enums';
 
 export type ContractStageItem = {
@@ -42,17 +43,41 @@ export type ContractListItem = {
 const toNumber = (value: unknown) =>
   value === null || value === undefined ? null : Number(value);
 
+/// Поиск по тексту строки: номер, контрагент, объект, предмет — подстрокой без
+/// учёта регистра. Сумма — только точным совпадением: contains по Decimal
+/// Prisma не умеет, а «220 000» и «220000,00» из поля сводим к одному числу.
+export function buildSearchWhere(q?: string): Prisma.ContractWhereInput {
+  const text = q?.trim();
+  if (!text) return {};
+
+  const contains = { contains: text, mode: 'insensitive' } as const;
+  const or: Prisma.ContractWhereInput[] = [
+    { number: contains },
+    { counterparty: contains },
+    { objectName: contains },
+    { subject: contains },
+  ];
+
+  const numeric = text.replace(/[\s\u00a0₽]/g, '').replace(',', '.');
+  const amount = Number(numeric);
+  if (numeric && Number.isFinite(amount)) or.push({ amount: { equals: amount } });
+
+  return { OR: or };
+}
+
 /// Договоры одного года реестра, при желании — одного источника.
 /// Порядок — по дате подписания, свежие сверху; договоры без даты в реестре
 /// встречаются, они уходят в конец.
 export async function getContracts(options: {
   registryYear: number;
   source?: ContractSource;
+  q?: string;
 }): Promise<ContractListItem[]> {
   const rows = await prisma.contract.findMany({
     where: {
       registryYear: options.registryYear,
       ...(options.source ? { source: options.source } : {}),
+      ...buildSearchWhere(options.q),
     },
     include: {
       stages: { orderBy: { no: 'asc' } },
@@ -87,10 +112,11 @@ export async function getContracts(options: {
 }
 
 /// Сколько договоров в каждом реестре — для переключателя над таблицей.
-export async function getContractCounts(registryYear: number) {
+/// С поиском считаем только найденные, чтобы вкладки не обещали лишнего.
+export async function getContractCounts(registryYear: number, q?: string) {
   const groups = await prisma.contract.groupBy({
     by: ['source'],
-    where: { registryYear },
+    where: { registryYear, ...buildSearchWhere(q) },
     _count: { _all: true },
   });
 
