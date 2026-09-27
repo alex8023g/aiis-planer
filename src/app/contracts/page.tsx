@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Fragment } from 'react';
 
 import { AddContractDialog } from '@/components/forContractsPage/AddContractDialog';
-import { ContractRowMenu } from '@/components/forContractsPage/ContractRowMenu';
+import { ContractDialogWrapper } from '@/components/forContractsPage/ContractDialogWrapper';
 import { EditSelectedContractButton } from '@/components/forContractsPage/EditSelectedContractButton';
 import { FileBadge } from '@/components/forContractsPage/FileBadge';
 import { Header } from '@/components/Header';
@@ -117,7 +117,7 @@ function Stages({ row }: { row: ContractListItem }) {
       rowId={row.id}
       className='border-b border-neutral-200 last:border-0 dark:border-neutral-800'
     >
-      <td colSpan={8} className='px-4 pb-3'>
+      <td colSpan={7} className='px-4 pb-3'>
         <details className='text-sm'>
           <summary className='cursor-pointer text-neutral-500 select-none hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100'>
             Этапы: {row.stages.length}
@@ -230,10 +230,10 @@ export default async function ContractsPage({
         </div>
       </div>
       <main className='mx-auto p-6 sm:p-10'>
-        <p className='mb-4 text-sm text-neutral-500 dark:text-neutral-400'>
+        {/* <p className='mb-4 text-sm text-neutral-500 dark:text-neutral-400'>
           Договоров: {rows.length} · Сумма: {money.format(total)}
           {withoutAmount > 0 && ` · без суммы в реестре: ${withoutAmount}`}
-        </p>
+        </p> */}
 
         {/* relative обязателен: иначе абсолютный sr-only в шапке таблицы не
             обрезается overflow-x-auto и растягивает всю страницу вширь. */}
@@ -248,16 +248,13 @@ export default async function ContractsPage({
                 <th className='px-4 py-3 font-medium'>Срок</th>
                 <th className='px-4 py-3 font-medium'>Статус</th>
                 <th className='px-4 py-3 font-medium'>Файлы</th>
-                <th className='px-4 py-3'>
-                  <span className='sr-only'>Действия</span>
-                </th>
               </tr>
             </thead>
             <SelectableTableBody>
               {rows.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={7}
                     className='px-4 py-6 text-center text-neutral-500 dark:text-neutral-400'
                   >
                     Договоров за {REGISTRY_YEAR} год нет.
@@ -310,9 +307,9 @@ export default async function ContractsPage({
                     </td>
                     <td className='px-4 py-3 align-top'>
                       <Files row={row} />
-                    </td>
-                    <td className='px-4 py-3 align-top'>
-                      {editable && <ContractRowMenu contract={row} />}
+                      {/* Диалог правки рисуется порталом, так что ячейка для
+                          него не важна — отдельной колонки не нужно. */}
+                      {editable && <ContractDialogWrapper contract={row} />}
                     </td>
                   </SelectableRow>
                   {row.stages.length > 0 && <Stages row={row} />}
