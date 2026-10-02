@@ -1,10 +1,10 @@
 import { LayoutList, Users } from 'lucide-react';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 
-import { AddProjectDialog } from '@/components/AddProjectDialog';
 import { UserMenu } from '@/components/UserMenu';
 import { buttonVariants } from '@/components/ui/button';
-import { canEdit, type SessionUser } from '@/lib/session';
+import { type SessionUser } from '@/lib/session';
 import { UserRole } from '@/lib/types';
 
 const navLink = buttonVariants({ variant: 'ghost', size: 'sm' });
@@ -14,6 +14,8 @@ const pageTitles = {
   projects: 'Графики проектов',
   project: 'Проект',
   aiis: 'АИИС',
+  aiis2: 'АИИС 2',
+  aiis3: 'АИИС 3',
   users: 'Пользователи',
   contracts: 'Договоры',
   tenders: 'Конкурсы',
@@ -32,6 +34,7 @@ export function Header({
   current,
   title,
   meta,
+  action,
 }: {
   user: SessionUser;
   current: keyof typeof pageTitles;
@@ -41,6 +44,11 @@ export function Header({
   /// Приписка к заголовку — например, сколько всего проектов. Считает её
   /// страница: шапка сама за данными не ходит.
   meta?: string;
+  /// Кнопка страницы — «Добавить проект», «Добавить договор». Живёт в шапке,
+  /// чтобы не уезжать вверх вместе со списком, но что именно показывать и кому,
+  /// решает сама страница: иначе шапке пришлось бы знать и про роли, и про
+  /// активную вкладку договоров.
+  action?: ReactNode;
 }) {
   return (
     <header className='sticky top-0 z-10 border-b border-neutral-200 bg-neutral-50/80 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80'>
@@ -56,10 +64,7 @@ export function Header({
           )}
         </div>
         <div className='flex items-center gap-2'>
-          {/* Кнопка живёт в шапке, чтобы не уезжать вверх вместе со списком.
-              Создавать проекты может admin и editor; viewer'у и pending —
-              нечего. */}
-          {current === 'projects' && canEdit(user) && <AddProjectDialog />}
+          {action}
           {current !== 'projects' && (
             <Link href='/projects' className={navLink}>
               <LayoutList />

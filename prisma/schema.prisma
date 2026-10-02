@@ -93,6 +93,8 @@ model Project {
   points      MeasurementPoint[]
   /// Объекты проекта: по ним раскладываются точки учёта и спецификации.
   facilities  Facility[]
+  /// Точки измерения из опроса: что стоит на ТИ сейчас и что ставим.
+  tis         Ti[]
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 }
@@ -308,4 +310,301 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+/// Сейчас на ТИ стоит (current) или ставим взамен (new). Общий для счётчика и
+/// модема: у обоих на ТИ бывает не больше одного каждого вида.
+enum EquipmentState {
+  current
+  removed
+  proposed
+}
+
+enum ModemKind {
+  builtIn
+  external
+}
+
+/// Класс напряжения, кВ. Список закрытый: классы стандартные, других на
+/// объектах не бывает, и свободное число пустило бы в базу и «10.5», и «10 кВ».
+/// Объявлены по возрастанию: Postgres сортирует enum в порядке объявления, и
+/// сортировка по напряжению работает сама, без таблицы соответствий.
+enum VoltageClass {
+  kv0_4
+  kv6
+  kv10
+  kv35
+  kv110
+  kv220
+  kv330
+  kv750
+}
+
+/// Канал связи модема.
+enum Channel {
+  gprs
+  csd
+}
+
+/// Точка измерения (ТИ) из опроса. Что на ней стоит — в дочерних таблицах:
+/// у каждой ТИ свой набор оборудования, общего между ТИ нет.
+model Ti {
+  id            String        @id @default(cuid())
+  projectId     String
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// № ТИ на ОС. Строка: в опросе встречаются номера вида «3а».
+  number        String
+  name          String
+  /// Класс напряжения ТИ. Необязателен: на опросе его записывают не всегда,
+  /// и null здесь — «ещё не выяснили», а не «напряжения нет».
+  uNom          VoltageClass?
+  /// Порядок в таблице опроса: задаёт составитель.
+  position      Int
+  /// Не больше двух: текущий и новый (см. @@unique в Meter).
+  meters        Meter[]
+  // ttId          String
+  // tt            Tt            @relation(fields: [ttId], references: [id], onDelete: Cascade)
+  tt            Tt[]
+  tn            Tn[]
+  /// УСПД, через который опрашивается ТИ: один на несколько ТИ. Необязателен —
+  /// ТИ бывают и без него. SetNull, а не Cascade: снятый УСПД не должен уносить
+  /// сами ТИ, они остаются и переезжают на другой.
+  uspdId        String?
+  uspd          Uspd?         @relation(fields: [uspdId], references: [id], onDelete: SetNull)
+  /// Модем, через который опрашивается ТИ: один на несколько ТИ. Необязателен —
+  /// ТИ бывают и без него. SetNull, а не Cascade: снятый модем не должен уносить
+  /// сами ТИ, они остаются и переезжают на другой.
+  modemId       String?
+  modem         Modem?        @relation(fields: [modemId], references: [id], onDelete: SetNull)
+  connection    Connection?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  sidePollingId String?
+  sidePolling   SidePolling?  @relation(fields: [sidePollingId], references: [id])
+  tisNotesId    String?
+  tisNotes      TisNotes?     @relation(fields: [tisNotesId], references: [id])
+
+  @@index([projectId])
+  @@index([modemId])
+}
+
+/// Прибор учёта ТИ. Поля необязательны: у нового счётчика тип и номер
+/// появляются позже, а соответствие требованиям у текущего выясняют не сразу.
+model Meter {
+  id            String         @id @default(cuid())
+  tiId          String
+  ti            Ti             @relation(fields: [tiId], references: [id], onDelete: Cascade)
+  state         EquipmentState
+  type          String?
+  number        String?
+  isCompliant   Boolean?
+  dateInstalled DateTime?      @db.Date
+  dateRemoved   DateTime?      @db.Date
+
+  @@unique([tiId, state])
+}
+
+/// Трансформаторы тока ТИ: по одному на фазу. Фазы B может не быть — при
+/// двух ТТ (фазы A и C) её поля пустые.
+model Tt {
+  id            String    @id @default(cuid())
+  tiId          String    @unique
+  ti            Ti        @relation(fields: [tiId], references: [id], onDelete: Cascade)
+  // tis     Ti[]
+  typeA         String?
+  typeB         String?
+  typeC         String?
+  numberA       String?
+  numberB       String?
+  numberC       String?
+  /// Коэффициент трансформации, например «150/5».
+  ratio         String?
+  dateInstalled DateTime? @db.Date
+  dateRemoved   DateTime? @db.Date
+}
+
+/// Трансформатор напряжения ТИ. Трёхфазный ТН — одна марка в typeA, typeB и
+/// typeC пустые; три однофазных — по марке на фазу.
+model Tn {
+  id            String    @id @default(cuid())
+  tiId          String    @unique
+  ti            Ti        @relation(fields: [tiId], references: [id], onDelete: Cascade)
+  typeA         String?
+  typeB         String?
+  typeC         String?
+  numberA       String?
+  numberB       String?
+  numberC       String?
+  /// Коэффициент трансформации, например «10000/100».
+  ratio         String?
+  dateInstalled DateTime? @db.Date
+  dateRemoved   DateTime? @db.Date
+}
+
+model SidePolling {
+  id          String  @id @default(cuid())
+  description String?
+  tis         Ti[]
+}
+
+/// УСПД: устройство сбора и передачи данных. Своя строка, а не поля в Ti —
+/// один УСПД собирает данные с нескольких ТИ, и переписать его номер надо
+/// один раз, а не в каждой ТИ по отдельности.
+/// Тип и номер необязательны: на опросе записывают не всегда.
+model Uspd {
+  id     String  @id @default(cuid())
+  type   String?
+  number String?
+  /// ТИ, которые опрашиваются через этот УСПД. Своего проекта у УСПД нет:
+  /// проект известен через ТИ. Пустого списка не бывает — как и модем, УСПД
+  /// заводят вместе с первой ТИ и удаляют вместе с последней: иначе после
+  /// удаления проекта (ТИ уходят каскадом) останется строка, до которой уже
+  /// никак не добраться. Связью это не выразить, поэтому следят на записи,
+  /// одной транзакцией.
+  tis    Ti[]
+}
+
+/// Модем: своя строка, а не поля в Ti — один модем обслуживает несколько ТИ,
+/// и номер с SIM-картой у него общий на все.
+model Modem {
+  id      String    @id @default(cuid())
+  kind    ModemKind
+  type    String?
+  number  String?
+  simCard SimCard?
+  /// ТИ, которые опрашиваются через этот модем. Пустого списка не бывает:
+  /// модем заводят вместе с первой ТИ и удаляют вместе с последней — модем
+  /// без ТИ никем не опрашивается и в опросе не значится. Связью это не
+  /// выразить (строка модема должна существовать раньше, чем на неё
+  /// сошлётся ТИ), поэтому следят за этим на записи, одной транзакцией.
+  tis     Ti[]
+}
+
+/// Как опрашивается счётчик ТИ.
+model Connection {
+  id           String  @id @default(cuid())
+  tiId         String  @unique
+  ti           Ti      @relation(fields: [tiId], references: [id], onDelete: Cascade)
+  /// Связной (сетевой) адрес счётчика.
+  meterAddress String?
+  port         String?
+  /// GPRS по умолчанию: так опрашивается почти всё, CSD остаётся редким
+  /// исключением.
+  channel      Channel @default(gprs)
+}
+
+/// SIM-карта модема. Висит на модеме, а не на ТИ: при замене модема новая
+/// карта приезжает вместе с ним, а старая остаётся при старом.
+model SimCard {
+  id       String  @id @default(cuid())
+  modemId  String  @unique
+  modem    Modem   @relation(fields: [modemId], references: [id], onDelete: Cascade)
+  number   String?
+  ip       String?
+  provider String?
+}
+
+model TisNotes {
+  id          String  @id @default(cuid())
+  description String?
+  tis         Ti[]
+}
+
+/// Откуда приехал договор: у каждого реестра свой файл и своя роль компании.
+enum ContractSource {
+  /// Реестр ЭПР Заказчик: мы заказчик, контрагент — исполнитель.
+  epr_customer
+  /// Реестр РН-Энерго: мы исполнитель, заказчик один — РН-Энерго.
+  rn_energo
+  /// Реестр СРО: мы исполнитель, заказчик у каждого договора свой.
+  sro
+}
+
+/// Строка реестра договоров. Источники разные, но набор полей общий;
+/// то, что не разложилось по колонкам, лежит в raw.
+model Contract {
+  id            String          @id @default(cuid())
+  source        ContractSource
+  /// Год листа в реестре, а не год подписания: они иногда расходятся.
+  registryYear  Int
+  number        String
+  /// Лист и номер строки в исходной книге: номер договора не уникален —
+  /// в реестрах один и тот же номер встречается у разных договоров.
+  sourceSheet   String
+  sourceRow     Int
+  signedAt      DateTime?
+  counterparty  String
+  objectName    String?
+  subject       String
+  /// null, если в реестре вместо суммы текст — тогда см. amountNote.
+  amount        Decimal?        @db.Decimal(14, 2)
+  amountNote    String?
+  /// Только НДС. В реестрах ЭПР и СРО это одна колонка с dsNote, но пишут
+  /// в неё и ставку, и состояние допсоглашения — разводим их при разборе.
+  vatNote       String?
+  /// Состояние дополнительного соглашения («ДС № 1 согласовано», «закрыт»).
+  dsNote        String?
+  termText      String?
+  startsAt      DateTime?
+  endsAt        DateTime?
+  statusText    String?
+  originalState String?
+  /// Исходная строка целиком: реестры грязные, без неё не перепроверить.
+  raw           Json
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  stages        ContractStage[]
+  files         ContractFile[]
+
+  @@unique([source, registryYear, sourceSheet, sourceRow])
+  @@index([source, registryYear])
+  @@index([number])
+  @@index([signedAt])
+  @@map("contract")
+}
+
+/// Этап договора. Есть только у РН-Энерго: там этапы вынесены на отдельные
+/// листы книги и связаны с реестром гиперссылками.
+model ContractStage {
+  id         String    @id @default(cuid())
+  contractId String
+  contract   Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  no         Int
+  name       String
+  /// Стоимость этапа: есть не на всех листах реестра.
+  amount     Decimal?  @db.Decimal(14, 2)
+  statusText String?
+  closedAt   DateTime?
+  dueAt      DateTime?
+
+  @@unique([contractId, no])
+  @@index([contractId])
+  @@map("contract_stage")
+}
+
+/// Скан договора в MinIO: в базе — метаданные, сам файл лежит в бакете
+/// (см. src/lib/minio.ts).
+///
+/// onDelete: Cascade убирает эти строки вместе с договором, но объекты в MinIO
+/// остаются: база про бакет ничего не знает. Удаления договоров в интерфейсе
+/// сейчас нет; когда появится — чистить бакет придётся там же, иначе в нём
+/// накопятся файлы, на которые никто не ссылается.
+model ContractFile {
+  id          String   @id @default(cuid())
+  contractId  String
+  contract    Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  /// Ключ объекта в бакете — он же путь к файлу, поэтому уникален.
+  objectKey   String   @unique
+  /// Имя файла как у пользователя на диске: его отдаём при скачивании, а в
+  /// ключе объекта лежит очищенный вариант.
+  fileName    String
+  contentType String
+  size        Int
+  /// Почта загрузившего, а не id: пользователя могут удалить, а история
+  /// загрузок должна пережить это.
+  uploadedBy  String?
+  createdAt   DateTime @default(now())
+
+  @@index([contractId])
+  @@map("contract_file")
 }

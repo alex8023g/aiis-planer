@@ -5,6 +5,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
 import type { StageKind, SubtaskKey } from '../src/generated/prisma/enums';
 import { parseEmailList } from '../src/lib/emails';
+import { seedTis } from './seed-ti';
 import {
   TaskStatus,
   UserRole,
@@ -139,6 +140,35 @@ const projects: Omit<Project, 'members'>[] = [
           poverkaAiis: TaskStatus.NotStarted,
         },
       },
+    },
+  },
+  /// Проект под опрос МЛЗ: его ТИ заводит seedTis() из survey-data.ts. Этапы
+  /// здесь заглушка — в опросе их нет, а ppo в Stages обязателен.
+  {
+    id: 'mlz',
+    name: 'МЛЗ',
+    responsible: null,
+    dateStart: '2026-09-19',
+    duration: 0,
+    stages: {
+      ppo: {
+        duration: 15,
+        subtasks: {
+          dogovor: null,
+          dopusk: TaskStatus.NotStarted,
+          visit: TaskStatus.Completed,
+          summary: TaskStatus.InProgress,
+          specification: null,
+          xml20000: null,
+          report: null,
+        },
+      },
+      design: null,
+      supply: null,
+      smrPnr: null,
+      poverka: null,
+      algorithm: null,
+      metrology: null,
     },
   },
 ];
@@ -303,6 +333,10 @@ async function main() {
     await seedProject(project, members);
     console.log(`seeded project ${project.id} (${project.name})`);
   }
+
+  const tis = await seedTis(prisma, 'mlz');
+
+  console.log(`seeded ${tis} ТИ from survey-data.ts into project mlz`);
 }
 
 main()

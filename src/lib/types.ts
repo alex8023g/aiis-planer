@@ -29,6 +29,35 @@ export const roleLabels: Record<UserRole, string> = {
   [UserRole.Pending]: 'Ожидает подтверждения',
 };
 
+/// Значения совпадают со строками enum ModemKind в prisma/schema.prisma.
+export enum ModemKind {
+  /// Модем внутри счётчика: отдельной коробки на ТИ нет.
+  BuiltIn = 'builtIn',
+  /// Отдельный модем рядом со счётчиком.
+  External = 'external',
+}
+
+/// Класс напряжения ТИ, кВ. Значения совпадают со строками enum VoltageClass в
+/// prisma/schema.prisma и идут по возрастанию — в том же порядке их показывают
+/// в списках выбора.
+export enum VoltageClass {
+  Kv0_4 = 'kv0_4',
+  Kv6 = 'kv6',
+  Kv10 = 'kv10',
+  Kv35 = 'kv35',
+  Kv110 = 'kv110',
+  Kv220 = 'kv220',
+  Kv330 = 'kv330',
+  Kv750 = 'kv750',
+}
+
+/// Канал связи модема. Значения совпадают со строками enum Channel в
+/// prisma/schema.prisma.
+export enum Channel {
+  Gprs = 'gprs',
+  Csd = 'csd',
+}
+
 export type Dependency = {
   stage: keyof Stages;
   subtask?: string;
