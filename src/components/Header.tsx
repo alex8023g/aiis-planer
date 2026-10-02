@@ -16,6 +16,7 @@ const pageTitles = {
   aiis: 'АИИС',
   aiis2: 'АИИС 2',
   aiis3: 'АИИС 3',
+  aiis4: 'АИИС 4',
   users: 'Пользователи',
   contracts: 'Договоры',
   tenders: 'Конкурсы',
