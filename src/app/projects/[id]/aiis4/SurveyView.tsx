@@ -1,25 +1,23 @@
 'use client';
 
 import { Check, Pencil, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
-import type {
-  SurveyCell,
-  SurveyColumn,
-} from '@/app/projects/[id]/aiis2/survey-data';
 import { SurveyTable } from '@/components/SurveyTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { emptyRow } from '@/lib/survey-cells';
+import { surveyTiCells, surveyTiColumns, type SurveyTi } from '@/lib/survey-ti';
 
 /// Панель управления и таблица опроса. Клиентская ради состояния editable:
 /// кнопка в панели переключает таблицу между просмотром и правкой.
+/// ТИ приходят значениями из базы, ячейки собираются здесь: правке нужны сами
+/// значения, а не готовый текст.
 export function SurveyView({
-  columns,
-  rows,
+  tis,
   canEdit,
 }: {
-  columns: SurveyColumn[];
-  rows: SurveyCell[][];
+  tis: SurveyTi[];
   /// Может ли пользователь менять проект (см. canEditProject). Без права
   /// кнопки нет вовсе: незачем показывать то, что не сработает.
   canEdit: boolean;
@@ -28,6 +26,12 @@ export function SurveyView({
   /// Сколько ТИ добавить разом. Строкой, а не числом: иначе поле нельзя
   /// очистить, чтобы набрать новое значение, — пустое число стало бы 0.
   const [addCount, setAddCount] = useState('1');
+  /// У проекта без ТИ — шапка и одна пустая строка, как на aiis3.
+  const rows = useMemo(
+    () => (tis.length > 0 ? surveyTiCells(tis) : [emptyRow(surveyTiColumns)]),
+    [tis],
+  );
+  console.log('🚀 ~ SurveyView ~ rows:', rows);
 
   return (
     <>
@@ -64,7 +68,7 @@ export function SurveyView({
         )}
       </div>
       <SurveyTable
-        columns={columns}
+        columns={surveyTiColumns}
         rows={rows}
         /// № и наименование ТИ не уезжают при прокрутке вбок: без них
         /// в правых колонках не понять, о какой ТИ строка.

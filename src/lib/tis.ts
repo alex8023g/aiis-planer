@@ -4,7 +4,16 @@ import type {
 } from '@/app/projects/[id]/aiis2/survey-data';
 import { EquipmentState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
-import { Channel, ModemKind, VoltageClass, WiringScheme } from '@/lib/types';
+import {
+  cell,
+  emptyRow,
+  spans,
+  text,
+  voltageClassLabels,
+  yesNo,
+} from '@/lib/survey-cells';
+import type { SurveyTi } from '@/lib/survey-ti';
+import { Channel, ModemKind } from '@/lib/types';
 
 /// Все поля ТИ, какие есть в схеме, — по колонке на поле. Пустых колонок тут
 /// хватает: опрос заполнил не всё, а в выгрузке трёх колонок («место
@@ -53,67 +62,9 @@ export const tiColumns: SurveyColumn[] = [
   { title: 'примечания', minWidth: 160 },
 ];
 
-/// Пустая строка во всю ширину таблицы — для проекта, у которого ТИ ещё нет.
-/// Одни заголовки над пустотой читаются как сломанная страница, а строка
-/// показывает, что таблица в порядке и ждёт данных.
-///
-/// В ячейках неразрывный пробел, а не пустая строка: у пустой ячейки нет
-/// строки текста, и высотой она была бы в одни поля — такую строку под
-/// заголовками попросту не разглядеть.
+/// Пустая строка во всю ширину таблицы — см. emptyRow в src/lib/survey-cells.ts.
 export function emptyTiRow(columns: SurveyColumn[] = tiColumns): SurveyCell[] {
-  return columns.map(() => ({ v: '\u00a0', bordered: true }));
-}
-
-/// Соседние ТИ, которые смотрят на одну общую строку — УСПД, модем, текст
-/// опроса, примечание, — показываем одной объединённой ячейкой. Для каждой
-/// строки возвращает высоту объединения, а для накрытых — null.
-/// Объединяются только подряд идущие: разорванную группу таблица показать не
-/// может, и такие ТИ получат каждая свою ячейку с тем же текстом.
-function spans(keys: (string | null)[]): (number | null)[] {
-  const result: (number | null)[] = keys.map(() => 1);
-  let index = 0;
-
-  while (index < keys.length) {
-    const key = keys[index];
-
-    if (key == null) {
-      index += 1;
-      continue;
-    }
-
-    let end = index + 1;
-
-    while (end < keys.length && keys[end] === key) end += 1;
-
-    result[index] = end - index;
-
-    for (let covered = index + 1; covered < end; covered += 1) {
-      result[covered] = null;
-    }
-
-    index = end;
-  }
-
-  return result;
-}
-
-/// Ячейка под объединение: накрытая — null, владелец — с rowSpan. rowSpan в 1
-/// строку не ставим: в разметке он ничего не значит, а в данных выглядит так,
-/// будто ячейку зачем-то объединили саму с собой.
-/// null и undefined здесь разное: null — «ячейку накрыли сверху, рисовать не
-/// надо», undefined — строки за пределами списка, такой вообще не бывает.
-/// Свести их вместе (span ?? 1) значит нарисовать накрытую ячейку заново.
-function cell(value: string, span: number | null | undefined): SurveyCell {
-  if (span === null) return null;
-
-  return span !== undefined && span > 1
-    ? { v: value, rowSpan: span }
-    : { v: value };
-}
-
-/// Пусто и «неизвестно» в таблице выглядят одинаково: колонка просто пустая.
-function text(value: string | null | undefined): SurveyCell {
-  return { v: value ?? '' };
+  return emptyRow(columns);
 }
 
 /// Коэффициент трансформации — один на все три фазы, и стоит он рядом с
@@ -148,30 +99,9 @@ function phaseCell(
   return { v: PHASES.map((_, index) => values[index] ?? '—').join('\n') };
 }
 
-function yesNo(value: boolean | null | undefined): SurveyCell {
-  if (value === null || value === undefined) return { v: '' };
-
-  return { v: value ? 'да' : 'нет' };
-}
-
 const modemKindLabels: Record<ModemKind, string> = {
   [ModemKind.BuiltIn]: 'встроенный',
   [ModemKind.External]: 'внешний',
-};
-
-/// Класс напряжения показываем числом, как его называют вслух: «0,4», «110».
-/// Запятая — десятичный разделитель по-русски, «0.4» в таблице выглядело бы
-/// выгрузкой из чужой системы.
-const voltageClassLabels: Record<VoltageClass, string> = {
-  [VoltageClass.Kv0_2]: '0,2',
-  [VoltageClass.Kv0_4]: '0,4',
-  [VoltageClass.Kv6]: '6',
-  [VoltageClass.Kv10]: '10',
-  [VoltageClass.Kv35]: '35',
-  [VoltageClass.Kv110]: '110',
-  [VoltageClass.Kv220]: '220',
-  [VoltageClass.Kv330]: '330',
-  [VoltageClass.Kv750]: '750',
 };
 
 const channelLabels: Record<Channel, string> = {
@@ -316,63 +246,31 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
   });
 }
 
-/// Колонки таблицы опроса (aiis4): раскладка файла опроса тех. решений — то,
-/// что смотрят на выезде, а не все поля ТИ подряд, как в tiColumns.
-export const surveyTiColumns: SurveyColumn[] = [
-  { title: '№ТИ на ОС', minWidth: 80 },
-  { title: 'наименование ТИ', minWidth: 280 },
-  { title: 'Uном, кВ', minWidth: 80 },
-  { title: 'тип ПУ', minWidth: 160 },
-  { title: 'схема включения', minWidth: 100 },
-  { title: 'требуется замена ПУ (да/нет)', minWidth: 200 },
-  { title: 'опрашивается / не опрашивается', minWidth: 200 },
-  { title: 'свобод. RS-485', minWidth: 100 },
-  { title: 'тех. решение', minWidth: 320 },
-  { title: 'замена сч.', minWidth: 160 },
-  { title: 'опрос', minWidth: 200 },
-];
-
-/// Схему включения пишем так же, как в опросе, — сокращением.
-const wiringLabels: Record<WiringScheme, string> = {
-  [WiringScheme.Direct]: 'прям.',
-  [WiringScheme.SemiIndirect]: 'полукос.',
-  [WiringScheme.Indirect]: 'косв.',
-};
-
-/// Модем в «опрашивается» — как в опросе: «да, по встр. модему».
-const pollingModemLabels: Record<ModemKind, string> = {
-  [ModemKind.BuiltIn]: 'по встр. модему',
-  [ModemKind.External]: 'по внеш. модему',
-};
-
-/// «Опрашивается»: да/нет из ТИ и, если опрашивается, через какой модем — его
-/// вид лежит на группе.
-function pollingText(isPolled: boolean | null, modemLabel?: string): string {
-  if (isPolled === null) return '';
-  if (!isPolled) return 'нет';
-
-  return modemLabel ? `да, ${modemLabel}` : 'да';
-}
-
-/// Точки измерения проекта для таблицы опроса (aiis4) — в том порядке, в
-/// котором их записал составитель. Доступ не проверяется, как и в getTiRows.
-export async function getSurveyTiRows(
-  projectId: string,
-): Promise<SurveyCell[][]> {
+/// ТИ проекта для таблицы опроса (aiis4) — в том порядке, в котором их
+/// записал составитель. Значения как в базе: ячейки из них собирает клиент
+/// (surveyTiCells в src/lib/survey-ti.ts). Доступ не проверяется, как и в
+/// getTiRows.
+export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
   const tis = await prisma.ti.findMany({
     where: { projectId },
     orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
     select: {
+      id: true,
       number: true,
       name: true,
       uNom: true,
       wiring: true,
       isPolled: true,
       freeRs485: true,
-      groupId: true,
-      meters: { select: { state: true, type: true, isCompliant: true } },
+      meters: {
+        where: {
+          state: { in: [EquipmentState.current, EquipmentState.proposed] },
+        },
+        select: { state: true, type: true, isCompliant: true },
+      },
       group: {
         select: {
+          id: true,
           modem: { select: { kind: true, type: true } },
           technicalSolution: { select: { description: true } },
         },
@@ -380,49 +278,27 @@ export async function getSurveyTiRows(
     },
   });
 
-  /// Как в getTiRows: объединяем по группе, только если у неё есть это общее.
-  const groupKeys = (
-    has: (group: NonNullable<(typeof tis)[number]['group']>) => boolean,
-  ) => tis.map((ti) => (ti.group && has(ti.group) ? ti.groupId : null));
-  const solutionSpans = spans(
-    groupKeys((group) => group.technicalSolution !== null),
-  );
-  const modemSpans = spans(groupKeys((group) => group.modem !== null));
-
-  return tis.map((ti, index) => {
-    const current = ti.meters.find(
+  return tis.map(({ meters, group, ...ti }) => {
+    const current = meters.find(
       (meter) => meter.state === EquipmentState.current,
     );
-    const next = ti.meters.find(
+    const proposed = meters.find(
       (meter) => meter.state === EquipmentState.proposed,
     );
-    const modem = ti.group?.modem;
-    /// «Требуется замена» — обратное к «соответствует требованиям».
-    const needsReplacement =
-      current?.isCompliant === null || current?.isCompliant === undefined
-        ? null
-        : !current.isCompliant;
 
-    return [
-      text(ti.number),
-      text(ti.name),
-      text(ti.uNom ? voltageClassLabels[ti.uNom] : ''),
-      text(current?.type),
-      text(ti.wiring ? wiringLabels[ti.wiring] : ''),
-      yesNo(needsReplacement),
-      text(
-        pollingText(
-          ti.isPolled,
-          modem ? pollingModemLabels[modem.kind] : undefined,
-        ),
-      ),
-      yesNo(ti.freeRs485),
-      cell(
-        ti.group?.technicalSolution?.description ?? '',
-        solutionSpans[index],
-      ),
-      text(next?.type),
-      cell(modem?.type ?? '', modemSpans[index]),
-    ];
+    return {
+      ...ti,
+      currentMeter: current
+        ? { type: current.type, isCompliant: current.isCompliant }
+        : null,
+      proposedMeter: proposed ? { type: proposed.type } : null,
+      group: group
+        ? {
+            id: group.id,
+            technicalSolution: group.technicalSolution?.description ?? null,
+            modem: group.modem,
+          }
+        : null,
+    };
   });
 }

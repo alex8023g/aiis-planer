@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { Header } from '@/components/Header';
 import { canEditProject, getProject } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
-import { emptyTiRow, getSurveyTiRows, surveyTiColumns } from '@/lib/tis';
+import { getSurveyTis } from '@/lib/tis';
 
 import { SurveyView } from './SurveyView';
 
@@ -24,10 +24,8 @@ export default async function Aiis4Page({
   /// проект, и «нет проекта» с «нет доступа» отвечают одинаково.
   if (!project) notFound();
 
-  const tiRows = await getSurveyTiRows(id);
-  console.log('🚀 ~ Aiis4Page ~ tiRows:', tiRows);
-  /// У проекта без ТИ — шапка и одна пустая строка, как на aiis3.
-  const rows = tiRows.length > 0 ? tiRows : [emptyTiRow(surveyTiColumns)];
+  const tis = await getSurveyTis(id);
+  console.log('🚀 ~ Aiis4Page ~ tis:', tis);
 
   return (
     /// Страница занимает ровно экран: прокручивается таблица, а не документ,
@@ -37,14 +35,10 @@ export default async function Aiis4Page({
         user={user}
         current='aiis4'
         title={`АИИС 4: ${project.name}`}
-        meta={`строк: ${tiRows.length}`}
+        meta={`строк: ${tis.length}`}
       />
       <main className='mx-auto flex min-h-0 w-full flex-1 flex-col gap-1 p-2 sm:p-4'>
-        <SurveyView
-          columns={surveyTiColumns}
-          rows={rows}
-          canEdit={canEditProject(project, user)}
-        />
+        <SurveyView tis={tis} canEdit={canEditProject(project, user)} />
       </main>
     </div>
   );
