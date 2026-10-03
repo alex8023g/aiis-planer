@@ -168,3 +168,52 @@ export async function mergeTiGroups(
 
   return { ok: true };
 }
+
+/// Разъединить объединённую ячейку «тех. решения» — как в Excel: значение
+/// остаётся в верхней. Верхняя ТИ (по порядку в таблице) остаётся в группе
+/// со всем общим — решением, модемом, УСПД, текстом опроса, примечанием, —
+/// остальные из группы выходят и остаются без группы. Ничего не удаляется.
+export async function splitTiGroup(
+  projectId: string,
+  tiIds: string[],
+): Promise<ActionResult> {
+  const allowed = await requireProjectEditor(projectId);
+  if (!allowed.ok) return allowed;
+
+  const ids = [...new Set(tiIds)];
+
+  if (ids.length < 2) {
+    return { ok: false, error: 'Выделите объединённую ячейку' };
+  }
+
+  const tis = await prisma.ti.findMany({
+    where: { id: { in: ids }, projectId },
+    orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+    select: { id: true, groupId: true },
+  });
+
+  /// Чужие или удалённые ТИ: страница могла устареть.
+  if (tis.length !== ids.length) {
+    return { ok: false, error: 'Часть ТИ не найдена — обновите страницу' };
+  }
+
+  /// Разъединяем ровно одну ячейку: все ТИ должны быть из одной группы. Иначе
+  /// таблица показывала устаревшее — и непонятно, какую группу трогать.
+  const groupId = tis[0].groupId;
+
+  if (groupId === null || tis.some((ti) => ti.groupId !== groupId)) {
+    return {
+      ok: false,
+      error: 'Ячейка уже не объединена — обновите страницу',
+    };
+  }
+
+  await prisma.ti.updateMany({
+    where: { id: { in: tis.slice(1).map((ti) => ti.id) } },
+    data: { groupId: null },
+  });
+
+  refresh();
+
+  return { ok: true };
+}

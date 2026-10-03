@@ -102,6 +102,7 @@ export function SurveyTable({
   rows,
   stickyColumns = 0,
   mergedBorders = false,
+  verticalAlign = 'top',
   cellProps,
   className,
 }: {
@@ -115,6 +116,11 @@ export function SurveyTable({
   /// таблицы, — и жирный левый край у строк группы: видно, где группа
   /// начинается, кончается и какие строки в неё входят.
   mergedBorders?: boolean;
+  /// Как прижать содержимое ячеек по высоте, если сама ячейка не сказала
+  /// иначе (SurveyCell.align). К верху — когда строки сверяют построчно, как
+  /// пофазные ячейки aiis3; по центру — когда в строке по одному значению и
+  /// объединённые ячейки должны держать текст посередине своих строк.
+  verticalAlign?: 'top' | 'middle';
   /// Свойства ячейки по её строке и колонке (индексы в rows). Передаёт только
   /// клиентский вызывающий: функцию с сервера в браузер не передать.
   cellProps?: (row: number, col: number) => SurveyCellProps | undefined;
@@ -191,7 +197,9 @@ export function SurveyTable({
                   /// разделены варианты решения.
                   className={cn(
                     'px-4 py-2 whitespace-pre-line',
-                    cell.align === 'middle' ? 'align-middle' : 'align-top',
+                    (cell.align ?? verticalAlign) === 'middle'
+                      ? 'align-middle'
+                      : 'align-top',
                     cell.bordered &&
                       'border border-neutral-200 dark:border-neutral-800',
                     sticky && stickyClass(columnIndex, stickyColumns),

@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, Merge, Pencil, Plus } from 'lucide-react';
+import { Check, Merge, Pencil, Plus, Split } from 'lucide-react';
 import { useMemo, useState, useTransition } from 'react';
 
 import { SurveyTable } from '@/components/SurveyTable';
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { emptyRow } from '@/lib/survey-cells';
 import { surveyTiCells, surveyTiColumns, type SurveyTi } from '@/lib/survey-ti';
 
-import { addTis, mergeTiGroups } from './actions';
+import { addTis, mergeTiGroups, splitTiGroup } from './actions';
 import { useCellSelection } from './useCellSelection';
 
 /// Колонки, где можно выделять ячейки (индексы в surveyTiColumns):
@@ -99,6 +99,27 @@ export function SurveyView({
     });
   }
 
+  /// Разъединить объединённую ячейку «тех. решения»: верхняя ТИ остаётся в
+  /// группе со всем общим, остальные выходят из неё. Ничего не удаляется,
+  /// поэтому и не спрашиваем.
+  function handleSplit() {
+    const range = selection.range;
+
+    if (!range) return;
+
+    setError(null);
+    startTransition(async () => {
+      const result = await splitTiGroup(
+        projectId,
+        tis.slice(range.top, range.bottom + 1).map((ti) => ti.id),
+      );
+
+      if (!result.ok) return setError(result.error);
+
+      selection.clear();
+    });
+  }
+
   function handleAdd() {
     setError(null);
     startTransition(async () => {
@@ -158,6 +179,21 @@ export function SurveyView({
               Объединить
             </Button>
           )}
+        {/* Разъединить можно одну объединённую ячейку «тех. решения» — ту, что
+            накрывает две строки и больше. */}
+        {editable &&
+          selection.range?.col === SOLUTION_COLUMN &&
+          selection.range.cells === 1 &&
+          selection.range.bottom > selection.range.top && (
+            <Button
+              variant='outline'
+              onClick={handleSplit}
+              disabled={isPending}
+            >
+              <Split />
+              Разъединить
+            </Button>
+          )}
         {error && <span className='text-xs text-destructive'>{error}</span>}
       </div>
       <SurveyTable
@@ -169,6 +205,9 @@ export function SurveyView({
         /// Объединённые ячейки — группы ТИ: жирная граница строк во всю
         /// ширину показывает, где группа начинается и кончается.
         mergedBorders
+        /// По одному значению в ячейке — по центру строки, а у объединённых
+        /// посередине их группы.
+        verticalAlign='middle'
         cellProps={selection.cellProps}
         className='min-h-0 flex-1'
       />
