@@ -4,7 +4,7 @@ import type {
 } from '@/app/projects/[id]/aiis2/survey-data';
 import { EquipmentState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
-import { Channel, ModemKind, VoltageClass } from '@/lib/types';
+import { Channel, ModemKind, VoltageClass, WiringScheme } from '@/lib/types';
 
 /// Все поля ТИ, какие есть в схеме, — по колонке на поле. Пустых колонок тут
 /// хватает: опрос заполнил не всё, а в выгрузке трёх колонок («место
@@ -60,8 +60,8 @@ export const tiColumns: SurveyColumn[] = [
 /// В ячейках неразрывный пробел, а не пустая строка: у пустой ячейки нет
 /// строки текста, и высотой она была бы в одни поля — такую строку под
 /// заголовками попросту не разглядеть.
-export function emptyTiRow(): SurveyCell[] {
-  return tiColumns.map(() => ({ v: '\u00a0', bordered: true }));
+export function emptyTiRow(columns: SurveyColumn[] = tiColumns): SurveyCell[] {
+  return columns.map(() => ({ v: '\u00a0', bordered: true }));
 }
 
 /// Соседние ТИ, которые смотрят на одну общую строку — УСПД, модем, текст
@@ -312,6 +312,117 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
 
       cell(ti.group?.sidePolling?.description ?? '', pollingSpans[index]),
       cell(ti.group?.notes?.description ?? '', notesSpans[index]),
+    ];
+  });
+}
+
+/// Колонки таблицы опроса (aiis4): раскладка файла опроса тех. решений — то,
+/// что смотрят на выезде, а не все поля ТИ подряд, как в tiColumns.
+export const surveyTiColumns: SurveyColumn[] = [
+  { title: '№ТИ на ОС', minWidth: 80 },
+  { title: 'наименование ТИ', minWidth: 280 },
+  { title: 'Uном, кВ', minWidth: 80 },
+  { title: 'тип ПУ', minWidth: 160 },
+  { title: 'схема включения', minWidth: 100 },
+  { title: 'требуется замена ПУ (да/нет)', minWidth: 200 },
+  { title: 'опрашивается / не опрашивается', minWidth: 200 },
+  { title: 'свобод. RS-485', minWidth: 100 },
+  { title: 'тех. решение', minWidth: 320 },
+  { title: 'замена сч.', minWidth: 160 },
+  { title: 'опрос', minWidth: 200 },
+];
+
+/// Схему включения пишем так же, как в опросе, — сокращением.
+const wiringLabels: Record<WiringScheme, string> = {
+  [WiringScheme.Direct]: 'прям.',
+  [WiringScheme.SemiIndirect]: 'полукос.',
+  [WiringScheme.Indirect]: 'косв.',
+};
+
+/// Модем в «опрашивается» — как в опросе: «да, по встр. модему».
+const pollingModemLabels: Record<ModemKind, string> = {
+  [ModemKind.BuiltIn]: 'по встр. модему',
+  [ModemKind.External]: 'по внеш. модему',
+};
+
+/// «Опрашивается»: да/нет из ТИ и, если опрашивается, через какой модем — его
+/// вид лежит на группе.
+function pollingText(isPolled: boolean | null, modemLabel?: string): string {
+  if (isPolled === null) return '';
+  if (!isPolled) return 'нет';
+
+  return modemLabel ? `да, ${modemLabel}` : 'да';
+}
+
+/// Точки измерения проекта для таблицы опроса (aiis4) — в том порядке, в
+/// котором их записал составитель. Доступ не проверяется, как и в getTiRows.
+export async function getSurveyTiRows(
+  projectId: string,
+): Promise<SurveyCell[][]> {
+  const tis = await prisma.ti.findMany({
+    where: { projectId },
+    orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+    select: {
+      number: true,
+      name: true,
+      uNom: true,
+      wiring: true,
+      isPolled: true,
+      freeRs485: true,
+      groupId: true,
+      meters: { select: { state: true, type: true, isCompliant: true } },
+      group: {
+        select: {
+          modem: { select: { kind: true, type: true } },
+          technicalSolution: { select: { description: true } },
+        },
+      },
+    },
+  });
+
+  /// Как в getTiRows: объединяем по группе, только если у неё есть это общее.
+  const groupKeys = (
+    has: (group: NonNullable<(typeof tis)[number]['group']>) => boolean,
+  ) => tis.map((ti) => (ti.group && has(ti.group) ? ti.groupId : null));
+  const solutionSpans = spans(
+    groupKeys((group) => group.technicalSolution !== null),
+  );
+  const modemSpans = spans(groupKeys((group) => group.modem !== null));
+
+  return tis.map((ti, index) => {
+    const current = ti.meters.find(
+      (meter) => meter.state === EquipmentState.current,
+    );
+    const next = ti.meters.find(
+      (meter) => meter.state === EquipmentState.proposed,
+    );
+    const modem = ti.group?.modem;
+    /// «Требуется замена» — обратное к «соответствует требованиям».
+    const needsReplacement =
+      current?.isCompliant === null || current?.isCompliant === undefined
+        ? null
+        : !current.isCompliant;
+
+    return [
+      text(ti.number),
+      text(ti.name),
+      text(ti.uNom ? voltageClassLabels[ti.uNom] : ''),
+      text(current?.type),
+      text(ti.wiring ? wiringLabels[ti.wiring] : ''),
+      yesNo(needsReplacement),
+      text(
+        pollingText(
+          ti.isPolled,
+          modem ? pollingModemLabels[modem.kind] : undefined,
+        ),
+      ),
+      yesNo(ti.freeRs485),
+      cell(
+        ti.group?.technicalSolution?.description ?? '',
+        solutionSpans[index],
+      ),
+      text(next?.type),
+      cell(modem?.type ?? '', modemSpans[index]),
     ];
   });
 }
