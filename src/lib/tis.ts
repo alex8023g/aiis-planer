@@ -192,10 +192,7 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       number: true,
       name: true,
       uNom: true,
-      uspdId: true,
-      modemId: true,
-      sidePollingId: true,
-      tisNotesId: true,
+      groupId: true,
       meters: {
         select: { state: true, type: true, number: true, isCompliant: true },
       },
@@ -221,29 +218,39 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
           ratio: true,
         },
       },
-      uspd: { select: { type: true, number: true } },
-      modem: {
-        select: {
-          kind: true,
-          type: true,
-          number: true,
-          simCard: { select: { number: true, ip: true, provider: true } },
-        },
-      },
       connection: {
         select: { meterAddress: true, port: true, channel: true },
       },
-      sidePolling: { select: { description: true } },
-      tisNotes: { select: { description: true } },
+      group: {
+        select: {
+          uspd: { select: { type: true, number: true } },
+          modem: {
+            select: {
+              kind: true,
+              type: true,
+              number: true,
+              simCard: { select: { number: true, ip: true, provider: true } },
+            },
+          },
+          sidePolling: { select: { description: true } },
+          notes: { select: { description: true } },
+        },
+      },
     },
   });
 
-  const uspdSpans = spans(tis.map((ti) => ti.uspdId));
+  /// Всё общее висит на группе, поэтому и объединяем по ней. Ключ — группа,
+  /// только если у неё есть это общее: иначе пустые ячейки ТИ одной группы
+  /// слились бы в одну, будто там общее значение.
+  const groupKeys = (
+    has: (group: NonNullable<(typeof tis)[number]['group']>) => boolean,
+  ) => tis.map((ti) => (ti.group && has(ti.group) ? ti.groupId : null));
+  const uspdSpans = spans(groupKeys((group) => group.uspd !== null));
   /// Модем и его SIM-карта делятся между теми же ТИ: карта висит на модеме,
   /// поэтому и объединяются они по одному ключу.
-  const modemSpans = spans(tis.map((ti) => ti.modemId));
-  const pollingSpans = spans(tis.map((ti) => ti.sidePollingId));
-  const notesSpans = spans(tis.map((ti) => ti.tisNotesId));
+  const modemSpans = spans(groupKeys((group) => group.modem !== null));
+  const pollingSpans = spans(groupKeys((group) => group.sidePolling !== null));
+  const notesSpans = spans(groupKeys((group) => group.notes !== null));
 
   return tis.map((ti, index) => {
     const current = ti.meters.find(
@@ -261,7 +268,9 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
     const tn = ti.tn[0] ?? null;
     const uspdSpan = uspdSpans[index];
     const modemSpan = modemSpans[index];
-    const sim = ti.modem?.simCard;
+    const uspd = ti.group?.uspd;
+    const modem = ti.group?.modem;
+    const sim = modem?.simCard;
 
     return [
       text(ti.number),
@@ -286,12 +295,12 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       phaseCell(tn ? [tn.numberA, tn.numberB, tn.numberC] : null),
       ratioCell(tn?.ratio),
 
-      cell(ti.uspd?.type ?? '', uspdSpan),
-      cell(ti.uspd?.number ?? '', uspdSpan),
+      cell(uspd?.type ?? '', uspdSpan),
+      cell(uspd?.number ?? '', uspdSpan),
 
-      cell(ti.modem ? modemKindLabels[ti.modem.kind] : '', modemSpan),
-      cell(ti.modem?.type ?? '', modemSpan),
-      cell(ti.modem?.number ?? '', modemSpan),
+      cell(modem ? modemKindLabels[modem.kind] : '', modemSpan),
+      cell(modem?.type ?? '', modemSpan),
+      cell(modem?.number ?? '', modemSpan),
 
       cell(sim?.number ?? '', modemSpan),
       cell(sim?.ip ?? '', modemSpan),
@@ -301,8 +310,8 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       text(ti.connection?.port),
       text(ti.connection ? channelLabels[ti.connection.channel] : ''),
 
-      cell(ti.sidePolling?.description ?? '', pollingSpans[index]),
-      cell(ti.tisNotes?.description ?? '', notesSpans[index]),
+      cell(ti.group?.sidePolling?.description ?? '', pollingSpans[index]),
+      cell(ti.group?.notes?.description ?? '', notesSpans[index]),
     ];
   });
 }
