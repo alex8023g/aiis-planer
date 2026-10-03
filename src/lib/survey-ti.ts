@@ -100,6 +100,23 @@ export function surveyTiCells(tis: SurveyTi[]): SurveyCell[][] {
   /// ячейки объединили кнопкой «Объединить». Обе колонки делят одно
   /// объединение — опрос часть решения, и строки у них совпадают.
   const groupSpans = spans(tis.map((ti) => ti.group?.id ?? null));
+  /// «Опрашивается» собирается из isPolled — своего у каждой ТИ — и вида
+  /// модема группы. Объединяем ТИ одной группы, но только с одинаковым
+  /// текстом: иначе общая ячейка показала бы значение верхней ТИ и спрятала
+  /// отличие остальных.
+  const pollingTexts = tis.map((ti) => {
+    const modem = ti.group?.modem;
+
+    return pollingText(
+      ti.isPolled,
+      modem ? pollingModemLabels[modem.kind] : undefined,
+    );
+  });
+  const pollingSpans = spans(
+    tis.map((ti, index) =>
+      ti.group ? `${ti.group.id}\n${pollingTexts[index]}` : null,
+    ),
+  );
 
   return tis.map((ti, index) => {
     const modem = ti.group?.modem;
@@ -111,12 +128,7 @@ export function surveyTiCells(tis: SurveyTi[]): SurveyCell[][] {
       text(ti.currentMeter?.type),
       text(ti.wiring ? wiringLabels[ti.wiring] : ''),
       yesNo(needsReplacement(ti)),
-      text(
-        pollingText(
-          ti.isPolled,
-          modem ? pollingModemLabels[modem.kind] : undefined,
-        ),
-      ),
+      cell(pollingTexts[index], pollingSpans[index]),
       yesNo(ti.freeRs485),
       cell(ti.group?.technicalSolution ?? '', groupSpans[index]),
       text(ti.proposedMeter?.type),

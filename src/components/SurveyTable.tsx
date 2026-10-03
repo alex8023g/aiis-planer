@@ -32,6 +32,59 @@ function stickyClass(index: number, stickyColumns: number): string {
   );
 }
 
+/// Строки, после которых проходит граница группы: последняя строка каждой
+/// объединённой ячейки и строка над её первой. Граница одна на стык, поэтому
+/// у соседних групп она не двоится. Первая строка таблицы — особый случай:
+/// над ней шапка, и её граница — верх таблицы (-1).
+function groupBoundaries(rows: SurveyCell[][]): Set<number> {
+  const boundaries = new Set<number>();
+
+  rows.forEach((row, rowIndex) => {
+    for (const cell of row) {
+      const span = cell?.rowSpan ?? 1;
+
+      if (span < 2) continue;
+
+      boundaries.add(rowIndex - 1);
+      boundaries.add(rowIndex + span - 1);
+    }
+  });
+
+  return boundaries;
+}
+
+/// Строки под объединёнными ячейками — те, что входят в группу из двух и
+/// больше строк.
+function groupedRows(rows: SurveyCell[][]): Set<number> {
+  const grouped = new Set<number>();
+
+  rows.forEach((row, rowIndex) => {
+    for (const cell of row) {
+      const span = cell?.rowSpan ?? 1;
+
+      for (
+        let covered = rowIndex;
+        span > 1 && covered < rowIndex + span;
+        covered++
+      ) {
+        grouped.add(covered);
+      }
+    }
+  });
+
+  return grouped;
+}
+
+/// Жирный левый край строки группы — как скобка вдоль её строк. Тенью внутрь
+/// первой ячейки, а не border: первая колонка обычно липкая, а рамка при
+/// border-collapse принадлежит таблице и уехала бы при прокрутке вбок.
+/// Если первая колонка — последняя липкая, у неё уже есть тень справа; тени
+/// в одном классе, иначе одна затёрла бы другую.
+const GROUP_EDGE =
+  '[--group-edge:var(--color-neutral-400)] dark:[--group-edge:var(--color-neutral-600)] shadow-[inset_2px_0_0_var(--group-edge)]';
+const GROUP_EDGE_LAST_STICKY =
+  '[--group-edge:var(--color-neutral-400)] dark:[--group-edge:var(--color-neutral-600)] shadow-[inset_2px_0_0_var(--group-edge),inset_-1px_0_0_var(--color-neutral-200)] dark:shadow-[inset_2px_0_0_var(--group-edge),inset_-1px_0_0_var(--color-neutral-800)]';
+
 /// Что вызывающий может добавить ячейке: обработчики, tabIndex, aria-, data-
 /// и классы (они ложатся последними и перекрывают свои). Объединение и стиль
 /// задаёт таблица — их отсюда не переопределить.
@@ -48,6 +101,7 @@ export function SurveyTable({
   columns,
   rows,
   stickyColumns = 0,
+  mergedBorders = false,
   cellProps,
   className,
 }: {
@@ -56,6 +110,11 @@ export function SurveyTable({
   /// Сколько колонок слева не уезжает при прокрутке вбок. Считаются по
   /// индексу ячейки в строке, поэтому colSpan в них не годится.
   stickyColumns?: number;
+  /// Выделять ли объединённые ячейки жирными верхом и низом.
+  /// Жирная граница строк вокруг объединённых ячеек — во всю ширину
+  /// таблицы, — и жирный левый край у строк группы: видно, где группа
+  /// начинается, кончается и какие строки в неё входят.
+  mergedBorders?: boolean;
   /// Свойства ячейки по её строке и колонке (индексы в rows). Передаёт только
   /// клиентский вызывающий: функцию с сервера в браузер не передать.
   cellProps?: (row: number, col: number) => SurveyCellProps | undefined;
@@ -63,6 +122,9 @@ export function SurveyTable({
   /// шапкой, и сама себя по экрану не режет.
   className?: string;
 }) {
+  const boundaries = mergedBorders ? groupBoundaries(rows) : null;
+  const grouped = mergedBorders ? groupedRows(rows) : null;
+
   return (
     <SurveyTableFrame stickyColumns={stickyColumns} className={className}>
       {/* Заголовки липнут к верху прокрутки: таблица длинная, и без них к
@@ -96,7 +158,19 @@ export function SurveyTable({
         {rows.map((row, rowIndex) => (
           <tr
             key={rowIndex}
-            className='border-b border-neutral-100 last:border-0 dark:border-neutral-800/60'
+            /// Границу строк рисуем на самой строке: при border-collapse
+            /// побеждает более толстая, и 2px перекрывают и обычную линию, и
+            /// низ объединённой ячейки, и стык под липкими колонками.
+            className={cn(
+              /// У последней строки тоже: таблица обычно ниже рамки не доходит,
+              /// и без черты низ последней строки сливается с пустотой под ней.
+              'border-b border-neutral-100 dark:border-neutral-800/60',
+              boundaries?.has(rowIndex) &&
+                'border-b-2 border-neutral-400 dark:border-neutral-600',
+              rowIndex === 0 &&
+                boundaries?.has(-1) &&
+                'border-t-2 border-t-neutral-400 dark:border-t-neutral-600',
+            )}
           >
             {row.map((cell, columnIndex) => {
               /// Накрытую объединением ячейку не рисуем совсем — иначе строка
@@ -121,6 +195,11 @@ export function SurveyTable({
                     cell.bordered &&
                       'border border-neutral-200 dark:border-neutral-800',
                     sticky && stickyClass(columnIndex, stickyColumns),
+                    columnIndex === 0 &&
+                      grouped?.has(rowIndex) &&
+                      (stickyColumns === 1
+                        ? GROUP_EDGE_LAST_STICKY
+                        : GROUP_EDGE),
                     extra?.className,
                   )}
                 >
