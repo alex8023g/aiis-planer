@@ -94,14 +94,12 @@ function needsReplacement(ti: SurveyTi): boolean | null {
 
 /// Ячейки таблицы опроса — по строке на ТИ, в порядке surveyTiColumns.
 export function surveyTiCells(tis: SurveyTi[]): SurveyCell[][] {
-  /// Объединяем по группе, только если у неё есть это общее: иначе пустые
-  /// ячейки ТИ одной группы слились бы в одну, будто там общее значение.
-  const groupKeys = (has: (group: NonNullable<SurveyTi['group']>) => boolean) =>
-    tis.map((ti) => (ti.group && has(ti.group) ? ti.group.id : null));
-  const solutionSpans = spans(
-    groupKeys((group) => group.technicalSolution !== null),
-  );
-  const modemSpans = spans(groupKeys((group) => group.modem !== null));
+  /// «Тех. решение» и «опрос» — общие у всей группы, поэтому объединяем по
+  /// группе, даже когда решения ещё нет: пустая ячейка группы — одно общее
+  /// «пока не решили», и заполнят её разом на все ТИ. Так же видно и то, что
+  /// ячейки объединили кнопкой «Объединить». Обе колонки делят одно
+  /// объединение — опрос часть решения, и строки у них совпадают.
+  const groupSpans = spans(tis.map((ti) => ti.group?.id ?? null));
 
   return tis.map((ti, index) => {
     const modem = ti.group?.modem;
@@ -120,9 +118,9 @@ export function surveyTiCells(tis: SurveyTi[]): SurveyCell[][] {
         ),
       ),
       yesNo(ti.freeRs485),
-      cell(ti.group?.technicalSolution ?? '', solutionSpans[index]),
+      cell(ti.group?.technicalSolution ?? '', groupSpans[index]),
       text(ti.proposedMeter?.type),
-      cell(modem?.type ?? '', modemSpans[index]),
+      cell(modem?.type ?? '', groupSpans[index]),
     ];
   });
 }

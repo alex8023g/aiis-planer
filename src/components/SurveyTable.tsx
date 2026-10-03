@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, TdHTMLAttributes } from 'react';
 
 import type {
   SurveyCell,
@@ -32,13 +32,23 @@ function stickyClass(index: number, stickyColumns: number): string {
   );
 }
 
+/// Что вызывающий может добавить ячейке: обработчики, tabIndex, aria-, data-
+/// и классы (они ложатся последними и перекрывают свои). Объединение и стиль
+/// задаёт таблица — их отсюда не переопределить.
+export type SurveyCellProps = Omit<
+  TdHTMLAttributes<HTMLTableCellElement>,
+  'rowSpan' | 'colSpan' | 'style'
+> & { [data: `data-${string}`]: string | number | undefined };
+
 /// Таблица опроса из выгрузки Numbers — только показ: ни сортировки, ни правки,
 /// ни сохранения. Серверный компонент: данные статические, на клиенте живут
-/// только ручки ширины колонок и замер липких колонок.
+/// только ручки ширины колонок и замер липких колонок. Выделение и прочее
+/// поведение ячеек — у вызывающего, через cellProps.
 export function SurveyTable({
   columns,
   rows,
   stickyColumns = 0,
+  cellProps,
   className,
 }: {
   columns: SurveyColumn[];
@@ -46,6 +56,9 @@ export function SurveyTable({
   /// Сколько колонок слева не уезжает при прокрутке вбок. Считаются по
   /// индексу ячейки в строке, поэтому colSpan в них не годится.
   stickyColumns?: number;
+  /// Свойства ячейки по её строке и колонке (индексы в rows). Передаёт только
+  /// клиентский вызывающий: функцию с сервера в браузер не передать.
+  cellProps?: (row: number, col: number) => SurveyCellProps | undefined;
   /// Высоту задаёт страница: таблица не знает, сколько места ей осталось под
   /// шапкой, и сама себя по экрану не режет.
   className?: string;
@@ -91,9 +104,11 @@ export function SurveyTable({
               if (cell === null) return null;
 
               const sticky = columnIndex < stickyColumns;
+              const extra = cellProps?.(rowIndex, columnIndex);
 
               return (
                 <td
+                  {...extra}
                   key={columnIndex}
                   rowSpan={cell.rowSpan}
                   colSpan={cell.colSpan}
@@ -106,6 +121,7 @@ export function SurveyTable({
                     cell.bordered &&
                       'border border-neutral-200 dark:border-neutral-800',
                     sticky && stickyClass(columnIndex, stickyColumns),
+                    extra?.className,
                   )}
                 >
                   {cell.v}
