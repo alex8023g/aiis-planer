@@ -41,6 +41,9 @@ export default async function Aiis4Page({
         <SurveyTable
           columns={surveyTiColumns}
           rows={rows}
+          /// № и наименование ТИ не уезжают при прокрутке вбок: без них
+          /// в правых колонках не понять, о какой ТИ строка.
+          stickyColumns={2}
           className='min-h-0 flex-1'
         />
       </main>
