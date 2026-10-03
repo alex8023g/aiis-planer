@@ -1,10 +1,11 @@
 import { notFound } from 'next/navigation';
 
 import { Header } from '@/components/Header';
-import { SurveyTable } from '@/components/SurveyTable';
-import { getProject } from '@/lib/projects';
+import { canEditProject, getProject } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import { emptyTiRow, getSurveyTiRows, surveyTiColumns } from '@/lib/tis';
+
+import { SurveyView } from './SurveyView';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,7 @@ export default async function Aiis4Page({
   if (!project) notFound();
 
   const tiRows = await getSurveyTiRows(id);
+  console.log('🚀 ~ Aiis4Page ~ tiRows:', tiRows);
   /// У проекта без ТИ — шапка и одна пустая строка, как на aiis3.
   const rows = tiRows.length > 0 ? tiRows : [emptyTiRow(surveyTiColumns)];
 
@@ -38,13 +40,10 @@ export default async function Aiis4Page({
         meta={`строк: ${tiRows.length}`}
       />
       <main className='mx-auto flex min-h-0 w-full flex-1 flex-col gap-1 p-2 sm:p-4'>
-        <SurveyTable
+        <SurveyView
           columns={surveyTiColumns}
           rows={rows}
-          /// № и наименование ТИ не уезжают при прокрутке вбок: без них
-          /// в правых колонках не понять, о какой ТИ строка.
-          stickyColumns={2}
-          className='min-h-0 flex-1'
+          canEdit={canEditProject(project, user)}
         />
       </main>
     </div>
