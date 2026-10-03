@@ -163,6 +163,7 @@ const modemKindLabels: Record<ModemKind, string> = {
 /// Запятая — десятичный разделитель по-русски, «0.4» в таблице выглядело бы
 /// выгрузкой из чужой системы.
 const voltageClassLabels: Record<VoltageClass, string> = {
+  [VoltageClass.Kv0_2]: '0,2',
   [VoltageClass.Kv0_4]: '0,4',
   [VoltageClass.Kv6]: '6',
   [VoltageClass.Kv10]: '10',

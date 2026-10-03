@@ -330,6 +330,7 @@ enum ModemKind {
 /// Объявлены по возрастанию: Postgres сортирует enum в порядке объявления, и
 /// сортировка по напряжению работает сама, без таблицы соответствий.
 enum VoltageClass {
+  kv0_2
   kv0_4
   kv6
   kv10
@@ -346,46 +347,72 @@ enum Channel {
   csd
 }
 
+/// Схема включения счётчика: напрямую или через измерительные трансформаторы.
+/// В опросе пишут «прям.», «полукос.», «косв.» — закрытый список, а не текст,
+/// иначе в базу поедут все варианты сокращений.
+enum WiringScheme {
+  /// Прямого включения: без ТТ и ТН.
+  direct
+  /// Полукосвенного: через ТТ, без ТН.
+  semiIndirect
+  /// Косвенного: через ТТ и ТН.
+  indirect
+}
+
 /// Точка измерения (ТИ) из опроса. Что на ней стоит — в дочерних таблицах:
 /// у каждой ТИ свой набор оборудования, общего между ТИ нет.
 model Ti {
-  id            String        @id @default(cuid())
-  projectId     String
-  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id                  String             @id @default(cuid())
+  projectId           String
+  project             Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   /// № ТИ на ОС. Строка: в опросе встречаются номера вида «3а».
-  number        String
-  name          String
+  number              String
+  name                String
   /// Класс напряжения ТИ. Необязателен: на опросе его записывают не всегда,
   /// и null здесь — «ещё не выяснили», а не «напряжения нет».
-  uNom          VoltageClass?
+  uNom                VoltageClass?
+  /// Схема включения счётчика. null — «ещё не выяснили», как и у uNom.
+  wiring              WiringScheme?
+  /// Опрашивается ли счётчик сейчас. Отдельным полем, а не по наличию модема:
+  /// модем на ТИ бывает, а опроса нет. null — «не выяснили».
+  isPolled            Boolean?
+  /// Есть ли у счётчика свободный RS-485 — к нему подключают шкаф связи.
+  /// null — «не выяснили».
+  freeRs485           Boolean?
+  /// Техническое решение, по которому делаем эту ТИ: одно на несколько ТИ.
+  /// Необязательно — до решения ТИ доходят не сразу. SetNull, а не Cascade:
+  /// удалённое решение не должно уносить сами ТИ.
+  technicalSolutionId String?
+  technicalSolution   TechnicalSolution? @relation(fields: [technicalSolutionId], references: [id], onDelete: SetNull)
   /// Порядок в таблице опроса: задаёт составитель.
-  position      Int
+  position            Int
   /// Не больше двух: текущий и новый (см. @@unique в Meter).
-  meters        Meter[]
+  meters              Meter[]
   // ttId          String
   // tt            Tt            @relation(fields: [ttId], references: [id], onDelete: Cascade)
-  tt            Tt[]
-  tn            Tn[]
+  tt                  Tt[]
+  tn                  Tn[]
   /// УСПД, через который опрашивается ТИ: один на несколько ТИ. Необязателен —
   /// ТИ бывают и без него. SetNull, а не Cascade: снятый УСПД не должен уносить
   /// сами ТИ, они остаются и переезжают на другой.
-  uspdId        String?
-  uspd          Uspd?         @relation(fields: [uspdId], references: [id], onDelete: SetNull)
+  uspdId              String?
+  uspd                Uspd?              @relation(fields: [uspdId], references: [id], onDelete: SetNull)
   /// Модем, через который опрашивается ТИ: один на несколько ТИ. Необязателен —
   /// ТИ бывают и без него. SetNull, а не Cascade: снятый модем не должен уносить
   /// сами ТИ, они остаются и переезжают на другой.
-  modemId       String?
-  modem         Modem?        @relation(fields: [modemId], references: [id], onDelete: SetNull)
-  connection    Connection?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  sidePollingId String?
-  sidePolling   SidePolling?  @relation(fields: [sidePollingId], references: [id])
-  tisNotesId    String?
-  tisNotes      TisNotes?     @relation(fields: [tisNotesId], references: [id])
+  modemId             String?
+  modem               Modem?             @relation(fields: [modemId], references: [id], onDelete: SetNull)
+  connection          Connection?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  sidePollingId       String?
+  sidePolling         SidePolling?       @relation(fields: [sidePollingId], references: [id])
+  tisNotesId          String?
+  tisNotes            TisNotes?          @relation(fields: [tisNotesId], references: [id])
 
   @@index([projectId])
   @@index([modemId])
+  @@index([technicalSolutionId])
 }
 
 /// Прибор учёта ТИ. Поля необязательны: у нового счётчика тип и номер
@@ -408,7 +435,7 @@ model Meter {
 /// двух ТТ (фазы A и C) её поля пустые.
 model Tt {
   id            String    @id @default(cuid())
-  tiId          String    @unique
+  tiId          String
   ti            Ti        @relation(fields: [tiId], references: [id], onDelete: Cascade)
   // tis     Ti[]
   typeA         String?
@@ -427,7 +454,7 @@ model Tt {
 /// typeC пустые; три однофазных — по марке на фазу.
 model Tn {
   id            String    @id @default(cuid())
-  tiId          String    @unique
+  tiId          String
   ti            Ti        @relation(fields: [tiId], references: [id], onDelete: Cascade)
   typeA         String?
   typeB         String?
@@ -462,6 +489,20 @@ model Uspd {
   /// никак не добраться. Связью это не выразить, поэтому следят на записи,
   /// одной транзакцией.
   tis    Ti[]
+}
+
+/// Техническое решение по ТИ: что делаем на точке — как подключаемся, что
+/// ставим. Своя строка, а не поле в Ti: в опросе одно и то же решение
+/// повторяется на многих ТИ, и поправить его текст надо один раз, а не в каждой
+/// ТИ по отдельности.
+model TechnicalSolution {
+  id          String @id @default(cuid())
+  description String
+  /// ТИ, которые делаются по этому решению. Своего проекта у решения нет:
+  /// проект известен через ТИ. Пустого списка не бывает — как и УСПД, решение
+  /// заводят вместе с первой ТИ и удаляют вместе с последней, одной транзакцией:
+  /// иначе после удаления проекта останется строка, до которой не добраться.
+  tis         Ti[]
 }
 
 /// Модем: своя строка, а не поля в Ti — один модем обслуживает несколько ТИ,

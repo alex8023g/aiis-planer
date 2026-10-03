@@ -41,6 +41,7 @@ export enum ModemKind {
 /// prisma/schema.prisma и идут по возрастанию — в том же порядке их показывают
 /// в списках выбора.
 export enum VoltageClass {
+  Kv0_2 = 'kv0_2',
   Kv0_4 = 'kv0_4',
   Kv6 = 'kv6',
   Kv10 = 'kv10',
@@ -56,6 +57,14 @@ export enum VoltageClass {
 export enum Channel {
   Gprs = 'gprs',
   Csd = 'csd',
+}
+
+/// Схема включения счётчика. Значения совпадают со строками enum WiringScheme в
+/// prisma/schema.prisma.
+export enum WiringScheme {
+  Direct = 'direct',
+  SemiIndirect = 'semiIndirect',
+  Indirect = 'indirect',
 }
 
 export type Dependency = {
