@@ -38,7 +38,11 @@ export default async function Aiis4Page({
         meta={`строк: ${tis.length}`}
       />
       <main className='mx-auto flex min-h-0 w-full flex-1 flex-col gap-1 p-2 sm:p-4'>
-        <SurveyView tis={tis} canEdit={canEditProject(project, user)} />
+        <SurveyView
+          projectId={id}
+          tis={tis}
+          canEdit={canEditProject(project, user)}
+        />
       </main>
     </div>
   );
