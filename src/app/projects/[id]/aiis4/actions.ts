@@ -3,8 +3,15 @@
 import { refresh } from 'next/cache';
 
 import { prisma } from '@/lib/prisma';
-import { requireProjectEditor } from '@/lib/projects';
+import { getProject, requireProjectEditor } from '@/lib/projects';
+import { requireUser } from '@/lib/session';
 import type { ActionResult } from '@/lib/types';
+
+import {
+  parseConnection,
+  readMeterNumber,
+  type MeterNumberReading,
+} from './meter_reader';
 
 /// Больше разом не добавляем: опечатка в поле («100» вместо «10») иначе
 /// вывалила бы в таблицу сотню пустых строк.
@@ -20,8 +27,32 @@ function nextNumber(numbers: string[]): number {
   return values.length > 0 ? Math.max(...values) + 1 : 1;
 }
 
+/// Модем — пустая заготовка: ни вида, ни типа, ни номера, и SIM-карта (если
+/// есть) тоже пустая.
+function isBlankModem(modem: {
+  kind: unknown;
+  type: string | null;
+  number: string | null;
+  simCard: {
+    number: string | null;
+    ip: string | null;
+    provider: string | null;
+  } | null;
+}): boolean {
+  const sim = modem.simCard;
+
+  return (
+    modem.kind === null &&
+    modem.type === null &&
+    modem.number === null &&
+    (sim === null ||
+      (sim.number === null && sim.ip === null && sim.provider === null))
+  );
+}
+
 /// Добавить count пустых ТИ в конец таблицы опроса. Номера идут подряд за
-/// последним, наименование пустое — его заполняют уже в таблице.
+/// последним, наименование пустое — его заполняют уже в таблице. Каждая ТИ
+/// получает свою группу с пустыми модемом и SIM-картой.
 export async function addTis(
   projectId: string,
   count: number,
@@ -42,13 +73,28 @@ export async function addTis(
   const firstPosition =
     existing.reduce((max, ti) => Math.max(max, ti.position), -1) + 1;
 
-  await prisma.ti.createMany({
-    data: Array.from({ length: count }, (_, index) => ({
-      projectId,
-      number: String(firstNumber + index),
-      name: '',
-      position: firstPosition + index,
-    })),
+  /// Каждая ТИ — со своей группой, а у группы пустые модем и SIM-карта: IP
+  /// можно вписать сразу. createMany вложенных записей не умеет — поэтому по
+  /// одной, но одной транзакцией.
+  await prisma.$transaction(async (tx) => {
+    for (let index = 0; index < count; index++) {
+      await tx.ti.create({
+        data: {
+          /// Связью, а не projectId: вместе с вложенным созданием группы
+          /// Prisma принимает только связи.
+          project: { connect: { id: projectId } },
+          number: String(firstNumber + index),
+          name: '',
+          position: firstPosition + index,
+          group: {
+            create: {
+              project: { connect: { id: projectId } },
+              modem: { create: { simCard: { create: {} } } },
+            },
+          },
+        },
+      });
+    }
   });
 
   /// Страница динамическая (force-dynamic), кэша под ней нет — достаточно
@@ -93,8 +139,12 @@ export async function mergeTiGroups(
 
     const targetId =
       tis[0].groupId ??
-      (await tx.tiGroup.create({ data: { projectId }, select: { id: true } }))
-        .id;
+      (
+        await tx.tiGroup.create({
+          data: { projectId, modem: { create: { simCard: { create: {} } } } },
+          select: { id: true },
+        })
+      ).id;
     const sourceIds = [
       ...new Set(
         tis
@@ -112,7 +162,15 @@ export async function mergeTiGroups(
 
     const shared = {
       uspd: { select: { id: true } },
-      modem: { select: { id: true } },
+      modem: {
+        select: {
+          id: true,
+          kind: true,
+          type: true,
+          number: true,
+          simCard: { select: { number: true, ip: true, provider: true } },
+        },
+      },
       technicalSolution: { select: { id: true } },
       sidePolling: { select: { id: true } },
       notes: { select: { id: true } },
@@ -147,6 +205,22 @@ export async function mergeTiGroups(
     };
 
     for (const kind of Object.keys(adopt) as (keyof typeof adopt)[]) {
+      /// Пустой модем — заготовка, заведённая с группой: он уступает
+      /// заполненному модему опустевшей группы, иначе тот ушёл бы вместе с
+      /// ней. Модем у группы один (@unique groupId), поэтому пустой убираем.
+      if (kind === 'modem' && target.modem && isBlankModem(target.modem)) {
+        const donor = emptied.find(
+          (group) => group.modem && !isBlankModem(group.modem),
+        )?.modem;
+
+        if (donor) {
+          await tx.modem.delete({ where: { id: target.modem.id } });
+          await adopt.modem(donor.id);
+        }
+
+        continue;
+      }
+
       if (target[kind]) continue;
 
       const donor = emptied.find((group) => group[kind] !== null)?.[kind];
@@ -172,7 +246,9 @@ export async function mergeTiGroups(
 /// Разъединить объединённую ячейку «тех. решения» — как в Excel: значение
 /// остаётся в верхней. Верхняя ТИ (по порядку в таблице) остаётся в группе
 /// со всем общим — решением, модемом, УСПД, текстом опроса, примечанием, —
-/// остальные из группы выходят и остаются без группы. Ничего не удаляется.
+/// остальные из группы выходят, и каждая получает свою новую группу с пустым
+/// модемом и SIM-картой: как и при создании группы, IP есть куда вписать
+/// сразу. Ничего не удаляется.
 export async function splitTiGroup(
   projectId: string,
   tiIds: string[],
@@ -208,12 +284,80 @@ export async function splitTiGroup(
     };
   }
 
-  await prisma.ti.updateMany({
-    where: { id: { in: tis.slice(1).map((ti) => ti.id) } },
-    data: { groupId: null },
+  /// Одной транзакцией: при сбое часть ТИ осталась бы в старой группе, а
+  /// часть — в новых.
+  await prisma.$transaction(async (tx) => {
+    for (const ti of tis.slice(1)) {
+      await tx.tiGroup.create({
+        data: {
+          projectId,
+          tis: { connect: { id: ti.id } },
+          modem: { create: { simCard: { create: {} } } },
+        },
+      });
+    }
   });
 
   refresh();
 
   return { ok: true };
+}
+
+/// Порт шлюза счётчика, если у ТИ свой не записан.
+const DEFAULT_METER_PORT = '6001';
+
+export type ConnectResult =
+  | { ok: true; reading: MeterNumberReading; host: string; port: number }
+  | { ok: false; error: string };
+
+/// Опросить счётчик ТИ — то же, что meter_reader --meter-number: заводской
+/// номер и дата выпуска. IP — SIM-карты модема группы, адрес — связной адрес
+/// счётчика, порт — свой у ТИ или 6001. Значения берём из базы по id, а не из
+/// браузера: иначе страница могла бы заставить сервер стучаться куда угодно.
+/// Опрос ничего не меняет, поэтому хватает права видеть проект.
+export async function connectMeter(
+  projectId: string,
+  tiId: string,
+): Promise<ConnectResult> {
+  const user = await requireUser();
+
+  if (!(await getProject(projectId, user))) {
+    return { ok: false, error: 'Проект не найден' };
+  }
+
+  const ti = await prisma.ti.findFirst({
+    where: { id: tiId, projectId },
+    select: {
+      connection: { select: { meterAddress: true, port: true } },
+      group: {
+        select: {
+          modem: { select: { simCard: { select: { ip: true } } } },
+        },
+      },
+    },
+  });
+
+  if (!ti) return { ok: false, error: 'ТИ не найдена — обновите страницу' };
+
+  const ip = ti.group?.modem?.simCard?.ip;
+  const address = ti.connection?.meterAddress;
+
+  if (!ip) return { ok: false, error: 'У ТИ не указан IP' };
+  if (!address) return { ok: false, error: 'У ТИ не указан адрес счётчика' };
+
+  try {
+    const config = parseConnection({
+      ip,
+      port: ti.connection?.port || DEFAULT_METER_PORT,
+      address,
+    });
+    const reading = await readMeterNumber(config);
+
+    return { ok: true, reading, host: config.host, port: config.port };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }

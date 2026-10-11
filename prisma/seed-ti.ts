@@ -111,13 +111,15 @@ export async function seedTis(
   /// то же примечание попадёт в несколько групп — у каждой своя копия.
   const groups = new Map<string, string>();
 
-  async function groupFor(position: number): Promise<string | undefined> {
+  async function groupFor(position: number): Promise<string> {
     const pollingOwner = valueOwner(owners, position, COL.polling);
     const notesOwner = valueOwner(owners, position, COL.notes);
-
-    if (pollingOwner < 0 && notesOwner < 0) return undefined;
-
-    const key = `${pollingOwner}:${notesOwner}`;
+    /// Группа есть у каждой ТИ: ТИ без общего с другими текста — в своей
+    /// собственной.
+    const key =
+      pollingOwner < 0 && notesOwner < 0
+        ? `own:${position}`
+        : `${pollingOwner}:${notesOwner}`;
     const existing = groups.get(key);
 
     if (existing) return existing;
@@ -130,6 +132,8 @@ export async function seedTis(
         sidePolling:
           polling === null ? undefined : { create: { description: polling } },
         notes: notes === null ? undefined : { create: { description: notes } },
+        /// Модем с SIM-картой заводится с каждой группой — пустым.
+        modem: { create: { simCard: { create: {} } } },
       },
       select: { id: true },
     });

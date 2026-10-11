@@ -119,6 +119,20 @@ export default async function ProjectPage({
         </section>
 
         <section className='rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6 dark:border-neutral-800 dark:bg-neutral-900'>
+          <div className='flex flex-wrap items-center justify-between gap-3'>
+            <h2 className='text-lg font-semibold tracking-tight'>
+              MeterReader
+            </h2>
+            <Link
+              href={`/projects/${project.id}/meter-reader`}
+              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            >
+              Открыть
+            </Link>
+          </div>
+        </section>
+
+        <section className='rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6 dark:border-neutral-800 dark:bg-neutral-900'>
           <h2 className='mb-4 text-lg font-semibold tracking-tight'>Этапы</h2>
 
           <div className='flex flex-col gap-4'>

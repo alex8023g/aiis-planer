@@ -228,7 +228,7 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       cell(uspd?.type ?? '', uspdSpan),
       cell(uspd?.number ?? '', uspdSpan),
 
-      cell(modem ? modemKindLabels[modem.kind] : '', modemSpan),
+      cell(modem?.kind ? modemKindLabels[modem.kind] : '', modemSpan),
       cell(modem?.type ?? '', modemSpan),
       cell(modem?.number ?? '', modemSpan),
 
@@ -244,6 +244,47 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       cell(ti.group?.notes?.description ?? '', notesSpans[index]),
     ];
   });
+}
+
+/// Как достучаться до счётчика ТИ — то, что нужно MeterReader для опроса.
+export type MeterReaderTi = {
+  id: string;
+  name: string;
+  /// IP SIM-карты модема группы: модем общий на группу, поэтому и IP у ТИ
+  /// одной группы совпадает.
+  ip: string | null;
+  port: string | null;
+  /// Связной (сетевой) адрес счётчика.
+  connectAddress: string | null;
+};
+
+/// ТИ проекта для MeterReader — в том порядке, в котором их записал
+/// составитель. Доступ не проверяется, как и в getTiRows.
+export async function getMeterReaderTis(
+  projectId: string,
+): Promise<MeterReaderTi[]> {
+  const tis = await prisma.ti.findMany({
+    where: { projectId },
+    orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+    select: {
+      id: true,
+      name: true,
+      connection: { select: { meterAddress: true, port: true } },
+      group: {
+        select: {
+          modem: { select: { simCard: { select: { ip: true } } } },
+        },
+      },
+    },
+  });
+
+  return tis.map((ti) => ({
+    id: ti.id,
+    name: ti.name,
+    ip: ti.group?.modem?.simCard?.ip ?? null,
+    port: ti.connection?.port ?? null,
+    connectAddress: ti.connection?.meterAddress ?? null,
+  }));
 }
 
 /// ТИ проекта для таблицы опроса (aiis4) — в том порядке, в котором их
@@ -262,6 +303,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
       wiring: true,
       isPolled: true,
       freeRs485: true,
+      connection: { select: { meterAddress: true, port: true } },
       meters: {
         where: {
           state: { in: [EquipmentState.current, EquipmentState.proposed] },
@@ -271,14 +313,20 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
       group: {
         select: {
           id: true,
-          modem: { select: { kind: true, type: true } },
+          modem: {
+            select: {
+              kind: true,
+              type: true,
+              simCard: { select: { ip: true } },
+            },
+          },
           technicalSolution: { select: { description: true } },
         },
       },
     },
   });
 
-  return tis.map(({ meters, group, ...ti }) => {
+  return tis.map(({ meters, group, connection, ...ti }) => {
     const current = meters.find(
       (meter) => meter.state === EquipmentState.current,
     );
@@ -288,6 +336,8 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
 
     return {
       ...ti,
+      meterAddress: connection?.meterAddress ?? null,
+      port: connection?.port ?? null,
       currentMeter: current
         ? { type: current.type, isCompliant: current.isCompliant }
         : null,
@@ -296,7 +346,13 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
         ? {
             id: group.id,
             technicalSolution: group.technicalSolution?.description ?? null,
-            modem: group.modem,
+            modem: group.modem
+              ? {
+                  kind: group.modem.kind,
+                  type: group.modem.type,
+                  ip: group.modem.simCard?.ip ?? null,
+                }
+              : null,
           }
         : null,
     };

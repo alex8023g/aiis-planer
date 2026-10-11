@@ -211,7 +211,9 @@ export function SurveyTable({
                     extra?.className,
                   )}
                 >
-                  {cell.v}
+                  {/* Вызывающий может подменить содержимое — например, полем
+                      правки ячейки. */}
+                  {extra?.children ?? cell.v}
                 </td>
               );
             })}

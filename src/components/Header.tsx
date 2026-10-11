@@ -22,6 +22,7 @@ const pageTitles = {
   tenders: 'Конкурсы',
   letters: 'Регистрация писем',
   warehouse: 'Склад',
+  meterreader: 'MeterReader',
 } as const;
 
 /// Шапка приложения. Липкая: список проектов длинный, а меню пользователя

@@ -1,23 +1,120 @@
 'use client';
 
-import { Check, Merge, Pencil, Plus, Split } from 'lucide-react';
-import { useMemo, useState, useTransition } from 'react';
+import { Check, Merge, Pencil, Plug, Plus, Split } from 'lucide-react';
+import {
+  useMemo,
+  useOptimistic,
+  useState,
+  useTransition,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+} from 'react';
 
-import { SurveyTable } from '@/components/SurveyTable';
+import {
+  updateMeterReaderCells,
+  type MeterReaderEdit,
+} from '@/app/projects/[id]/meter-reader/actions';
+import { CellEditor } from '@/components/CellEditor';
+import { SurveyTable, type SurveyCellProps } from '@/components/SurveyTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { copyText, parseClipboard } from '@/lib/clipboard';
 import { emptyRow } from '@/lib/survey-cells';
 import { surveyTiCells, surveyTiColumns, type SurveyTi } from '@/lib/survey-ti';
+import { cn } from '@/lib/utils';
 
-import { addTis, mergeTiGroups, splitTiGroup } from './actions';
+import {
+  addTis,
+  connectMeter,
+  mergeTiGroups,
+  splitTiGroup,
+} from './actions';
 import { useCellSelection } from './useCellSelection';
 
-/// Колонки, где можно выделять ячейки (индексы в surveyTiColumns):
-/// «наименование ТИ», «тех. решение» и «опрос». Выделение одно на таблицу —
-/// клик в другой колонке переносит его туда.
-const SELECTABLE_COLUMNS = [1, 8, 10];
+/// Колонки, где в режиме правки можно выделять ячейки (индексы в
+/// surveyTiColumns): «наименование ТИ», «тех. решение», «опрос», «IP» и
+/// «адрес счётчика». Выделение одно на таблицу — клик в другой колонке
+/// переносит его туда. В режиме просмотра клик выделяет строку целиком.
+const SELECTABLE_COLUMNS = [1, 8, 10, 11, 12];
 /// Колонка «тех. решение» в surveyTiColumns.
 const SOLUTION_COLUMN = 8;
+/// Колонка «подключён» в surveyTiColumns.
+const CONNECTED_COLUMN = 13;
+/// Колонки, что правятся в режиме правки, и поле под каждой. IP — у модема
+/// группы (ячейка объединена на группу), наименование и адрес — свои у
+/// каждой ТИ.
+const EDITABLE_COLUMNS: Partial<
+  Record<number, 'name' | 'ip' | 'connectAddress'>
+> = {
+  1: 'name',
+  11: 'ip',
+  12: 'connectAddress',
+};
+
+/// Значение правимой ячейки так, как его показывает таблица.
+function fieldValue(ti: SurveyTi | undefined, col: number): string {
+  if (!ti) return '';
+
+  switch (EDITABLE_COLUMNS[col]) {
+    case 'name':
+      return ti.name;
+    case 'ip':
+      return ti.group?.modem?.ip ?? '';
+    default:
+      return ti.meterAddress ?? '';
+  }
+}
+
+/// Правки поверх ТИ — то, что видно в таблице, пока экшен пишет в базу. IP
+/// висит на модеме группы, поэтому меняется у всех ТИ группы сразу;
+/// наименование и адрес — только у своей ТИ.
+function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
+  const groupIps = new Map<string, string | null>();
+  const names = new Map<string, string>();
+  const addresses = new Map<string, string | null>();
+
+  for (const { tiId, field, value } of edits) {
+    const trimmed = value.trim() === '' ? null : value.trim();
+
+    if (field === 'name') {
+      /// Наименование обязательное: пустое — '', а не null, как и в экшене.
+      names.set(tiId, value.trim());
+    } else if (field === 'connectAddress') {
+      addresses.set(tiId, trimmed);
+    } else if (field === 'ip') {
+      const groupId = tis.find((ti) => ti.id === tiId)?.group?.id;
+
+      if (groupId) groupIps.set(groupId, trimmed);
+    }
+  }
+
+  return tis.map((ti) => {
+    let next = ti;
+
+    if (names.has(ti.id)) {
+      next = { ...next, name: names.get(ti.id)! };
+    }
+
+    if (addresses.has(ti.id)) {
+      next = { ...next, meterAddress: addresses.get(ti.id) ?? null };
+    }
+
+    const modem = next.group?.modem;
+
+    if (next.group && modem && groupIps.has(next.group.id)) {
+      next = {
+        ...next,
+        group: {
+          ...next.group,
+          modem: { ...modem, ip: groupIps.get(next.group.id) ?? null },
+        },
+      };
+    }
+
+    return next;
+  });
+}
 /// Постоянная ссылка на пустой список: новый [] на каждой перерисовке
 /// пересчитывал бы границы ячеек в useCellSelection.
 const NO_ROWS: never[] = [];
@@ -43,10 +140,48 @@ export function SurveyView({
   const [addCount, setAddCount] = useState('1');
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  /// Сохранение ячеек — своим переходом: иначе на время записи кнопки
+  /// панели показывали бы «Добавляем…».
+  const [, startSaveTransition] = useTransition();
+  const [optimisticTis, addEdits] = useOptimistic(tis, applyEdits);
+  /// Ячейка, которая сейчас правится (у объединённой — первая строка), и с
+  /// какого текста начали.
+  const [editing, setEditing] = useState<{
+    row: number;
+    col: number;
+    initial: string;
+  } | null>(null);
+  /// Выделенная строка в режиме просмотра — ТИ целиком. В режиме правки
+  /// вместо неё выделение ячеек (useCellSelection).
+  const [selectedRow, setSelectedRow] = useState<number | null>(null);
+  /// Опрос счётчика кнопкой Connect: идёт ли сейчас. Итог — в колонке
+  /// «подключён».
+  const [isConnecting, startConnectTransition] = useTransition();
+  /// Сколько ТИ уже опрошено, когда опрашиваем все разом; null — одну.
+  const [connectProgress, setConnectProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+  /// Колонка «подключён»: итог Connect по каждой ТИ за эту сессию — в базу
+  /// не пишем, после перезагрузки колонка снова пустая. ok — счётчик ответил:
+  /// у таких ячеек перед номером зелёная точка.
+  const [connected, setConnected] = useState<
+    ReadonlyMap<string, { text: string; ok: boolean }>
+  >(() => new Map());
+  const connectedTexts = useMemo(
+    () =>
+      new Map(
+        Array.from(connected, ([tiId, { text }]) => [tiId, text] as const),
+      ),
+    [connected],
+  );
   /// У проекта без ТИ — шапка и одна пустая строка, как на aiis3.
   const rows = useMemo(
-    () => (tis.length > 0 ? surveyTiCells(tis) : [emptyRow(surveyTiColumns)]),
-    [tis],
+    () =>
+      optimisticTis.length > 0
+        ? surveyTiCells(optimisticTis, connectedTexts)
+        : [emptyRow(surveyTiColumns)],
+    [optimisticTis, connectedTexts],
   );
   console.log('🚀 ~ SurveyView ~ rows:', rows);
   /// Ячейки наименования ТИ, тех. решения и опроса можно выделять, как в Excel. Пустая таблица (одна
@@ -56,6 +191,300 @@ export function SurveyView({
     columns: SELECTABLE_COLUMNS,
   });
   console.log('🚀 ~ SurveyView ~ selection:', selection);
+
+  function setConnectedText(tiId: string, text: string, ok = false) {
+    setConnected((previous) => new Map(previous).set(tiId, { text, ok }));
+  }
+
+  function save(edits: MeterReaderEdit[]) {
+    if (edits.length === 0) return;
+
+    setError(null);
+    /// Не прошёл экшен — оптимистичные значения откатятся сами с концом
+    /// перехода.
+    startSaveTransition(async () => {
+      addEdits(edits);
+      const result = await updateMeterReaderCells(projectId, edits);
+
+      if (!result.ok) setError(result.error);
+    });
+  }
+
+  /// Первые строки ячеек колонки: объединённая ячейка группы — одна ячейка
+  /// на все её строки, вставка и очистка шагают по ячейкам, а не по строкам.
+  function cellStarts(col: number): number[] {
+    if (optimisticTis.length === 0) return [];
+
+    return rows.flatMap((cells, row) => (cells[col] !== null ? [row] : []));
+  }
+
+  /// Ячейки под выделением — по первой строке каждой.
+  function selectedCells(col: number): number[] {
+    const range = selection.range;
+
+    if (!range || range.col !== col) return [];
+
+    return cellStarts(col).filter(
+      (row) => row >= range.top && row <= range.bottom,
+    );
+  }
+
+  function valueAt(row: number, col: number): string {
+    return fieldValue(optimisticTis[row], col);
+  }
+
+  /// Правка ячейки — через её первую ТИ: для IP экшен сам найдёт модем
+  /// группы.
+  function edit(row: number, col: number, value: string): MeterReaderEdit {
+    return {
+      tiId: optimisticTis[row].id,
+      field: EDITABLE_COLUMNS[col]!,
+      value,
+    };
+  }
+
+  function finishEditing(value: string | null, refocus: boolean) {
+    if (!editing) return;
+
+    const { row, col } = editing;
+
+    setEditing(null);
+
+    if (value !== null && value.trim() !== valueAt(row, col)) {
+      save([edit(row, col, value)]);
+    }
+
+    /// Поле исчезнет только после перерисовки — фокус возвращаем следом.
+    if (refocus) {
+      requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLElement>(`[data-select-cell="${row}:${col}"]`)
+          ?.focus(),
+      );
+    }
+  }
+
+  /// Клавиши правимой ячейки в режиме правки, как в Excel: Enter и F2 —
+  /// править, набор текста — заменить, Delete — очистить выделенное. true —
+  /// клавишу обработали, выделению она уже не нужна.
+  function handleEditKeyDown(
+    event: KeyboardEvent<HTMLTableCellElement>,
+    row: number,
+    col: number,
+  ): boolean {
+    if (event.ctrlKey || event.metaKey || event.altKey) return false;
+
+    if (event.key === 'Enter' || event.key === 'F2') {
+      event.preventDefault();
+      setEditing({ row, col, initial: valueAt(row, col) });
+      return true;
+    }
+
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+
+      save(
+        selectedCells(col)
+          .filter((cellRow) => valueAt(cellRow, col) !== '')
+          .map((cellRow) => edit(cellRow, col, '')),
+      );
+      return true;
+    }
+
+    if (event.key.length === 1) {
+      event.preventDefault();
+      setEditing({ row, col, initial: event.key });
+      return true;
+    }
+
+    return false;
+  }
+
+  /// Вставка из буфера, как в Excel: значения по одному на ячейку сверху
+  /// вниз, начиная с верхней выделенной. Объединённая ячейка группы — одна
+  /// ячейка, ей одно значение. Из блока в несколько колонок берём первую:
+  /// выделение — в одной колонке, и вставка тоже. Лишнее за низом таблицы
+  /// отбрасываем. Одно значение на несколько выделенных ячеек заполняет их
+  /// все.
+  function handlePaste(event: ClipboardEvent<HTMLTableCellElement>) {
+    const range = selection.range;
+
+    if (!range || EDITABLE_COLUMNS[range.col] === undefined) return;
+
+    event.preventDefault();
+
+    const col = range.col;
+    const values = parseClipboard(
+      event.clipboardData.getData('text/plain'),
+    ).map((line) => line[0] ?? '');
+    const targets =
+      values.length === 1
+        ? selectedCells(col).map((row) => [row, values[0]] as const)
+        : cellStarts(col)
+            .filter((row) => row >= range.top)
+            .slice(0, values.length)
+            .map((row, index) => [row, values[index]] as const);
+
+    save(
+      targets
+        .filter(([row, value]) => value.trim() !== valueAt(row, col))
+        .map(([row, value]) => edit(row, col, value)),
+    );
+  }
+
+  /// Строка, напротив которой кликнули. У объединённой ячейки это не
+  /// обязательно её первая строка: клик в середине группы выделяет ТИ, что
+  /// напротив курсора.
+  function rowAt(event: MouseEvent<HTMLTableCellElement>, fallback: number) {
+    const body = event.currentTarget.closest('tbody');
+
+    if (!body) return fallback;
+
+    const index = Array.from(body.rows).findIndex((tr) => {
+      const rect = tr.getBoundingClientRect();
+
+      return event.clientY >= rect.top && event.clientY < rect.bottom;
+    });
+
+    return index >= 0 ? index : fallback;
+  }
+
+  /// Текст строки для Ctrl+C — колонки через таб, как их отдаёт Excel. У
+  /// объединённой ячейки значение лежит в её первой строке — ищем вверх.
+  function rowText(row: number): string {
+    return surveyTiColumns
+      .map((_, col) => {
+        for (let index = row; index >= 0; index--) {
+          const cell = rows[index][col];
+
+          if (cell !== null) return cell.v;
+        }
+
+        return '';
+      })
+      .join('\t');
+  }
+
+  /// Перейти к строке: выделить и прокрутить к ней. Первая колонка — № ТИ —
+  /// у каждой строки своя, её ячейка есть всегда.
+  function goToRow(row: number) {
+    setSelectedRow(row);
+    document
+      .querySelector(`[data-row-cell="${row}:0"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  }
+
+  /// Клавиши в режиме просмотра: стрелки — соседняя строка, Ctrl+C —
+  /// скопировать строку, Escape — снять выделение.
+  function handleRowKeyDown(event: KeyboardEvent<HTMLTableCellElement>) {
+    if (selectedRow === null) return;
+
+    if (event.key === 'Escape') {
+      setSelectedRow(null);
+      return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+      event.preventDefault();
+      void copyText(rowText(selectedRow));
+      return;
+    }
+
+    const next =
+      event.key === 'ArrowDown'
+        ? Math.min(selectedRow + 1, rows.length - 1)
+        : event.key === 'ArrowUp'
+          ? Math.max(selectedRow - 1, 0)
+          : null;
+
+    if (next === null) return;
+
+    /// Стрелки иначе прокрутили бы таблицу.
+    event.preventDefault();
+    goToRow(next);
+  }
+
+  /// Свойства ячеек в режиме просмотра: клик в любую ячейку выделяет строку.
+  /// Подсвечиваются только ячейки самой строки: объединённая ячейка группы,
+  /// подсвеченная во всю высоту, читалась бы как выделение всей группы.
+  /// Копируется строка всё же с ними — их значение относится и к этой ТИ.
+  function rowCellProps(row: number, col: number): SurveyCellProps | undefined {
+    /// Пустая таблица — одна строка-заглушка, выделять в ней нечего.
+    if (optimisticTis.length === 0) return undefined;
+
+    const covers = row === selectedRow && (rows[row][col]?.rowSpan ?? 1) === 1;
+
+    return {
+      'data-row-cell': `${row}:${col}`,
+      /// Фокус нужен ради клавиш, но табом по каждой ячейке не ходим.
+      tabIndex: -1,
+      'aria-selected': covers,
+      /// Клик по уже выделенной строке снимает выделение.
+      onMouseDown: (event: MouseEvent<HTMLTableCellElement>) => {
+        const clicked = rowAt(event, row);
+
+        setSelectedRow((current) => (current === clicked ? null : clicked));
+      },
+      onKeyDown: handleRowKeyDown,
+      className: cn(
+        'cursor-pointer outline-none',
+        covers && 'bg-blue-50 dark:bg-blue-950',
+      ),
+    };
+  }
+
+  /// Свойства ячеек: зелёная точка у подключённых счётчиков поверх того, что
+  /// дал режим. Копируется строка без неё — точка лежит только в разметке.
+  function cellProps(row: number, col: number): SurveyCellProps | undefined {
+    const props = modeCellProps(row, col);
+    const ti = optimisticTis[row];
+
+    if (col !== CONNECTED_COLUMN || !ti || !connected.get(ti.id)?.ok) {
+      return props;
+    }
+
+    return {
+      ...props,
+      children: (
+        <span className='inline-flex items-center gap-1.5'>
+          <span
+            aria-label='подключён'
+            className='size-2 shrink-0 rounded-full bg-green-500'
+          />
+          {rows[row][col]?.v}
+        </span>
+      ),
+    };
+  }
+
+  /// Свойства ячеек по режиму: в режиме просмотра — выделение строки, в
+  /// режиме правки — выделение ячеек и правка правимых колонок.
+  function modeCellProps(
+    row: number,
+    col: number,
+  ): SurveyCellProps | undefined {
+    if (!editable) return rowCellProps(row, col);
+
+    const props = selection.cellProps(row, col);
+
+    if (EDITABLE_COLUMNS[col] === undefined || !props) return props;
+
+    const isEditing = editing?.row === row && editing.col === col;
+
+    return {
+      ...props,
+      onKeyDown: (event: KeyboardEvent<HTMLTableCellElement>) => {
+        if (!handleEditKeyDown(event, row, col)) props.onKeyDown?.(event);
+      },
+      onDoubleClick: () => {
+        if (!isEditing) setEditing({ row, col, initial: valueAt(row, col) });
+      },
+      onPaste: handlePaste,
+      children: isEditing ? (
+        <CellEditor initial={editing.initial} onDone={finishEditing} />
+      ) : undefined,
+    };
+  }
 
   /// Пустое поле — Number('') = 0, его отсечёт проверка в экшене, и человек
   /// увидит, что не так. Проверять здесь второй раз незачем: экшен всё равно
@@ -120,6 +549,42 @@ export function SurveyView({
     });
   }
 
+  /// Опросить счётчики: выделенной ТИ или, без выделения, всех. По одному:
+  /// экшены Next.js из браузера всё равно идут очередью, а ТИ одной группы
+  /// сидят на одном модеме и разом их не опросить. Итог каждой ТИ виден в
+  /// колонке «подключён», как только он есть.
+  function handleConnect() {
+    const targets =
+      selectedRow === null
+        ? optimisticTis
+        : optimisticTis.slice(selectedRow, selectedRow + 1);
+
+    if (targets.length === 0) return;
+
+    for (const ti of targets) setConnectedText(ti.id, 'ждёт…');
+
+    setConnectProgress(
+      targets.length > 1 ? { done: 0, total: targets.length } : null,
+    );
+    startConnectTransition(async () => {
+      for (const [index, ti] of targets.entries()) {
+        setConnectedText(ti.id, 'подключаемся…');
+
+        const result = await connectMeter(projectId, ti.id);
+
+        if (result.ok) {
+          setConnectedText(ti.id, `№ ${result.reading.serialNumber}`, true);
+        } else {
+          setConnectedText(ti.id, `нет: ${result.error}`);
+        }
+
+        if (targets.length > 1) {
+          setConnectProgress({ done: index + 1, total: targets.length });
+        }
+      }
+    });
+  }
+
   function handleAdd() {
     setError(null);
     startTransition(async () => {
@@ -136,10 +601,35 @@ export function SurveyView({
           <Button
             variant={editable ? 'default' : 'outline'}
             aria-pressed={editable}
-            onClick={() => setEditable((value) => !value)}
+            onClick={() => {
+              /// Режимы выделяют по-разному: при переключении старое выделение
+              /// снимаем. Открытое поле правки закрываем без сохранения.
+              setEditing(null);
+              setSelectedRow(null);
+              selection.clear();
+              setEditable((value) => !value);
+            }}
           >
             {editable ? <Check /> : <Pencil />}
             {editable ? 'Готово' : 'Редактировать'}
+          </Button>
+        )}
+        {/* Подключение — в режиме просмотра: к ТИ выделенной строки, а без
+            выделения — ко всем ТИ по очереди. */}
+        {!editable && (
+          <Button
+            variant='outline'
+            disabled={optimisticTis.length === 0 || isConnecting}
+            onClick={handleConnect}
+          >
+            <Plug />
+            {isConnecting
+              ? connectProgress
+                ? `Connecting ${connectProgress.done}/${connectProgress.total}…`
+                : 'Connecting…'
+              : selectedRow === null
+                ? 'Connect all'
+                : 'Connect'}
           </Button>
         )}
         {/* Добавление ТИ — только в режиме правки. Новые ТИ встают в конец
@@ -208,7 +698,7 @@ export function SurveyView({
         /// По одному значению в ячейке — по центру строки, а у объединённых
         /// посередине их группы.
         verticalAlign='middle'
-        cellProps={selection.cellProps}
+        cellProps={cellProps}
         className='min-h-0 flex-1'
       />
     </>

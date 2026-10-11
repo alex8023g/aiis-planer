@@ -24,3 +24,12 @@ export async function copyText(text: string): Promise<void> {
   document.execCommand('copy');
   field.remove();
 }
+
+/// Текст из буфера в том виде, в каком его кладёт Excel: строки через
+/// перевод строки, колонки через таб. Завершающий перевод строки Excel
+/// добавляет сам — пустой строкой он не считается.
+export function parseClipboard(raw: string): string[][] {
+  const lines = raw.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n');
+
+  return lines.map((line) => line.split('\t'));
+}

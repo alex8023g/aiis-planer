@@ -186,7 +186,9 @@ async function main() {
       const solution = cellsByRow.get(solutionRow)?.[COL.solution] ?? null;
       const { modem } = polling(cells[COL.polling] ?? null, row);
 
-      if (solution === null && modem === null) continue;
+      /// Без номера ТИ строка опроса — не ТИ, группа ей не нужна. Остальным
+      /// группа нужна всем: ТИ без решения и модема — в своей собственной.
+      if ((cells[COL.number] ?? null) === null) continue;
 
       const key = solution === null ? `row:${row}` : `solution:${solutionRow}`;
       const group = groups.get(key) ?? { solution, modem: null, rows: [] };
@@ -224,10 +226,14 @@ async function main() {
               group.solution === null
                 ? undefined
                 : { create: { description: group.solution } },
-            modem:
-              group.modem === null
-                ? undefined
-                : { create: { kind: group.modem } },
+            /// Модем с SIM-картой — у каждой группы; вид, если он есть в
+            /// опросе, иначе пустой.
+            modem: {
+              create: {
+                kind: group.modem ?? undefined,
+                simCard: { create: {} },
+              },
+            },
           },
           select: { id: true },
         });
@@ -261,8 +267,7 @@ async function main() {
             wiring: wiring(value(COL.wiring), row),
             isPolled: polling(value(COL.polling), row).isPolled,
             freeRs485: yesNo(value(COL.freeRs485), row, COL.freeRs485),
-            groupId:
-              groupKey === undefined ? undefined : groupIds.get(groupKey),
+            groupId: groupKey === undefined ? undefined : groupIds.get(groupKey),
             /// В опросе одна колонка на счётчик — тот, что стоит сейчас.
             /// «Требуется замена» читается наоборот: «да» — не соответствует.
             meters:

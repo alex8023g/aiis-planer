@@ -33,6 +33,10 @@ export type SurveyTi = {
   wiring: DbWiringScheme | null;
   isPolled: boolean | null;
   freeRs485: boolean | null;
+  /// Связной (сетевой) адрес счётчика и порт — из Connection, свои у каждой
+  /// ТИ.
+  meterAddress: string | null;
+  port: string | null;
   /// Счётчик, что стоит сейчас (state = current).
   currentMeter: { type: string | null; isCompliant: boolean | null } | null;
   /// Счётчик, который ставим взамен (state = proposed).
@@ -41,7 +45,13 @@ export type SurveyTi = {
   group: {
     id: string;
     technicalSolution: string | null;
-    modem: { kind: DbModemKind; type: string | null } | null;
+    /// ip — SIM-карты модема: карта висит на модеме, а не на ТИ.
+    modem: {
+      /// null — модем заведён с группой, а какой он, ещё не выяснили.
+      kind: DbModemKind | null;
+      type: string | null;
+      ip: string | null;
+    } | null;
   } | null;
 };
 
@@ -59,6 +69,9 @@ export const surveyTiColumns: SurveyColumn[] = [
   { title: 'тех. решение', minWidth: 320 },
   { title: 'замена сч.', minWidth: 160 },
   { title: 'опрос', minWidth: 200 },
+  { title: 'IP', minWidth: 140 },
+  { title: 'адрес счётчика', minWidth: 140 },
+  { title: 'подключён', minWidth: 200 },
 ];
 
 /// Схему включения пишем так же, как в опросе, — сокращением.
@@ -93,12 +106,18 @@ function needsReplacement(ti: SurveyTi): boolean | null {
 }
 
 /// Ячейки таблицы опроса — по строке на ТИ, в порядке surveyTiColumns.
-export function surveyTiCells(tis: SurveyTi[]): SurveyCell[][] {
+/// connected — текст «подключён» по id ТИ: итог кнопки Connect живёт только
+/// на клиенте, до перезагрузки страницы, в базе его нет.
+export function surveyTiCells(
+  tis: SurveyTi[],
+  connected?: ReadonlyMap<string, string>,
+): SurveyCell[][] {
   /// «Тех. решение» и «опрос» — общие у всей группы, поэтому объединяем по
   /// группе, даже когда решения ещё нет: пустая ячейка группы — одно общее
   /// «пока не решили», и заполнят её разом на все ТИ. Так же видно и то, что
-  /// ячейки объединили кнопкой «Объединить». Обе колонки делят одно
-  /// объединение — опрос часть решения, и строки у них совпадают.
+  /// ячейки объединили кнопкой «Объединить». Колонки делят одно
+  /// объединение — опрос часть решения, IP — модема из опроса, и строки у них
+  /// совпадают.
   const groupSpans = spans(tis.map((ti) => ti.group?.id ?? null));
   /// «Опрашивается» собирается из isPolled — своего у каждой ТИ — и вида
   /// модема группы. Объединяем ТИ одной группы, но только с одинаковым
@@ -109,7 +128,7 @@ export function surveyTiCells(tis: SurveyTi[]): SurveyCell[][] {
 
     return pollingText(
       ti.isPolled,
-      modem ? pollingModemLabels[modem.kind] : undefined,
+      modem?.kind ? pollingModemLabels[modem.kind] : undefined,
     );
   });
   const pollingSpans = spans(
@@ -133,6 +152,10 @@ export function surveyTiCells(tis: SurveyTi[]): SurveyCell[][] {
       cell(ti.group?.technicalSolution ?? '', groupSpans[index]),
       text(ti.proposedMeter?.type),
       cell(modem?.type ?? '', groupSpans[index]),
+      /// IP — у модема группы, поэтому объединяется вместе с «опросом».
+      cell(modem?.ip ?? '', groupSpans[index]),
+      text(ti.meterAddress),
+      text(connected?.get(ti.id)),
     ];
   });
 }

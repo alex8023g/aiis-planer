@@ -383,8 +383,9 @@ model Ti {
   /// null — «не выяснили».
   freeRs485  Boolean?
   /// Группа ТИ с общими УСПД, модемом, тех. решением, текстом опроса и
-  /// примечанием. Необязательна — ТИ бывают и сами по себе. SetNull, а не
-  /// Cascade: удалённая группа не должна уносить сами ТИ.
+  /// примечанием. Группа есть у каждой ТИ — у одиночной своя: её заводят
+  /// добавление ТИ, «Разъединить» и сиды. Колонка всё же необязательна ради
+  /// SetNull, а не Cascade: удалённая группа не должна уносить сами ТИ.
   /// Группа должна быть из того же проекта, что и ТИ: связью это не выразить
   /// (составной ключ с SetNull обнулил бы и projectId), следят на записи.
   groupId    String?
@@ -518,11 +519,15 @@ model TechnicalSolution {
 /// Модем: своя строка, а не поля в Ti — один модем обслуживает несколько ТИ,
 /// и номер с SIM-картой у него общий на все.
 /// ТИ, которые опрашиваются через этот модем, — ТИ его группы.
+/// Заводится вместе с группой — пустым и с пустой SIM-картой: так IP и
+/// прочее можно вписать сразу, не выясняя сперва, какой там модем.
 model Modem {
-  id      String    @id @default(cuid())
-  groupId String    @unique
-  group   TiGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  kind    ModemKind
+  id      String     @id @default(cuid())
+  groupId String     @unique
+  group   TiGroup    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  /// null — «ещё не выяснили»: модем заведён с группой, а какой он, пока
+  /// неизвестно.
+  kind    ModemKind?
   type    String?
   number  String?
   simCard SimCard?
