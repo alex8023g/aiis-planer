@@ -1,5 +1,9 @@
 'use server';
 
+import { execFile } from 'node:child_process';
+import { isIP } from 'node:net';
+import { promisify } from 'node:util';
+
 import { refresh } from 'next/cache';
 
 import { prisma } from '@/lib/prisma';
@@ -301,6 +305,61 @@ export async function splitTiGroup(
   refresh();
 
   return { ok: true };
+}
+
+const execFileAsync = promisify(execFile);
+
+/// Сколько ждать ответа на ping, секунд.
+const PING_TIMEOUT = 2;
+
+export type PingResult = { ok: true } | { ok: false; error: string };
+
+/// Пингнуть IP модема ТИ — отвечает ли он вообще, до опроса счётчика. IP
+/// берём из базы по id, как и connectMeter, и пускаем в ping только адрес:
+/// в поле IP можно записать что угодно, и строка вида «-f» стала бы ключом.
+export async function pingTi(
+  projectId: string,
+  tiId: string,
+): Promise<PingResult> {
+  const user = await requireUser();
+
+  if (!(await getProject(projectId, user))) {
+    return { ok: false, error: 'Проект не найден' };
+  }
+
+  const ti = await prisma.ti.findFirst({
+    where: { id: tiId, projectId },
+    select: {
+      group: {
+        select: {
+          modem: { select: { simCard: { select: { ip: true } } } },
+        },
+      },
+    },
+  });
+
+  if (!ti) return { ok: false, error: 'ТИ не найдена — обновите страницу' };
+
+  const ip = ti.group?.modem?.simCard?.ip?.trim();
+
+  if (!ip) return { ok: false, error: 'У ТИ не указан IP' };
+  if (!isIP(ip)) return { ok: false, error: `«${ip}» — не IP-адрес` };
+
+  /// Таймаут ответа у ping на macOS — в миллисекундах, на Linux — в секундах.
+  const wait =
+    process.platform === 'darwin'
+      ? String(PING_TIMEOUT * 1000)
+      : String(PING_TIMEOUT);
+
+  try {
+    await execFileAsync('ping', ['-c', '1', '-W', wait, ip], {
+      timeout: (PING_TIMEOUT + 3) * 1000,
+    });
+
+    return { ok: true };
+  } catch {
+    return { ok: false, error: `${ip} не отвечает на ping` };
+  }
 }
 
 /// Порт шлюза счётчика, если у ТИ свой не записан.

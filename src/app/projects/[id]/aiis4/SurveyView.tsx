@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import {
   addTis,
   connectMeter,
+  pingTi,
   mergeTiGroups,
   splitTiGroup,
 } from './actions';
@@ -39,8 +40,14 @@ import { useCellSelection } from './useCellSelection';
 const SELECTABLE_COLUMNS = [1, 8, 10, 11, 12];
 /// Колонка «тех. решение» в surveyTiColumns.
 const SOLUTION_COLUMN = 8;
+/// Колонка «IP» в surveyTiColumns.
+const IP_COLUMN = 11;
 /// Колонка «подключён» в surveyTiColumns.
 const CONNECTED_COLUMN = 13;
+
+/// Итог проверки для точки в ячейке: зелёная — ок, красная — нет. error —
+/// почему нет, во всплывающей подсказке.
+type CheckStatus = { ok: boolean; error?: string };
 /// Колонки, что правятся в режиме правки, и поле под каждой. IP — у модема
 /// группы (ячейка объединена на группу), наименование и адрес — свои у
 /// каждой ТИ.
@@ -163,10 +170,15 @@ export function SurveyView({
     total: number;
   } | null>(null);
   /// Колонка «подключён»: итог Connect по каждой ТИ за эту сессию — в базу
-  /// не пишем, после перезагрузки колонка снова пустая. ok — счётчик ответил:
-  /// у таких ячеек перед номером зелёная точка.
+  /// не пишем, после перезагрузки колонка снова пустая. status — чем кончился
+  /// опрос: перед текстом точка, зелёная — счётчик ответил, красная — нет;
+  /// пока опрос не кончился, точки нет. error — почему не ответил, во
+  /// всплывающей подсказке: в ячейке длинный текст ошибки не уместить.
   const [connected, setConnected] = useState<
-    ReadonlyMap<string, { text: string; ok: boolean }>
+    ReadonlyMap<
+      string,
+      { text: string; status?: 'ok' | 'error'; error?: string }
+    >
   >(() => new Map());
   const connectedTexts = useMemo(
     () =>
@@ -192,8 +204,33 @@ export function SurveyView({
   });
   console.log('🚀 ~ SurveyView ~ selection:', selection);
 
-  function setConnectedText(tiId: string, text: string, ok = false) {
-    setConnected((previous) => new Map(previous).set(tiId, { text, ok }));
+  /// Ping IP модемов кнопкой Connect — по IP, а не по ТИ: модем общий на
+  /// группу, и ячейка IP объединена на всю группу. Только на эту сессию, как
+  /// и «подключён».
+  const [pings, setPings] = useState<ReadonlyMap<string, CheckStatus>>(
+    () => new Map(),
+  );
+
+  function setPing(ip: string, status: CheckStatus | null) {
+    setPings((previous) => {
+      const next = new Map(previous);
+
+      if (status) next.set(ip, status);
+      else next.delete(ip);
+
+      return next;
+    });
+  }
+
+  function setConnectedText(
+    tiId: string,
+    text: string,
+    status?: 'ok' | 'error',
+    error?: string,
+  ) {
+    setConnected((previous) =>
+      new Map(previous).set(tiId, { text, status, error }),
+    );
   }
 
   function save(edits: MeterReaderEdit[]) {
@@ -433,23 +470,49 @@ export function SurveyView({
     };
   }
 
-  /// Свойства ячеек: зелёная точка у подключённых счётчиков поверх того, что
-  /// дал режим. Копируется строка без неё — точка лежит только в разметке.
-  function cellProps(row: number, col: number): SurveyCellProps | undefined {
-    const props = modeCellProps(row, col);
+  /// Итог проверки для ячейки: ping — у IP, опрос — у «подключён».
+  function checkStatus(row: number, col: number): CheckStatus | undefined {
     const ti = optimisticTis[row];
 
-    if (col !== CONNECTED_COLUMN || !ti || !connected.get(ti.id)?.ok) {
-      return props;
+    if (!ti) return undefined;
+
+    if (col === IP_COLUMN) {
+      const ip = ti.group?.modem?.ip?.trim();
+
+      return ip ? pings.get(ip) : undefined;
     }
+
+    if (col === CONNECTED_COLUMN) {
+      const state = connected.get(ti.id);
+
+      return state?.status
+        ? { ok: state.status === 'ok', error: state.error }
+        : undefined;
+    }
+
+    return undefined;
+  }
+
+  /// Свойства ячеек: точка итога проверки в «IP» и «подключён» поверх того,
+  /// что дал режим. Копируется строка без неё — точка лежит только в
+  /// разметке. Поле правки точку не получает.
+  function cellProps(row: number, col: number): SurveyCellProps | undefined {
+    const props = modeCellProps(row, col);
+    const status = checkStatus(row, col);
+
+    if (!status || props?.children) return props;
 
     return {
       ...props,
+      title: status.error,
       children: (
         <span className='inline-flex items-center gap-1.5'>
           <span
-            aria-label='подключён'
-            className='size-2 shrink-0 rounded-full bg-green-500'
+            aria-hidden
+            className={cn(
+              'size-2 shrink-0 rounded-full',
+              status.ok ? 'bg-green-500' : 'bg-red-500',
+            )}
           />
           {rows[row][col]?.v}
         </span>
@@ -561,21 +624,45 @@ export function SurveyView({
 
     if (targets.length === 0) return;
 
-    for (const ti of targets) setConnectedText(ti.id, 'ждёт…');
+    for (const ti of targets) {
+      setConnectedText(ti.id, 'ждёт…');
+
+      const ip = ti.group?.modem?.ip?.trim();
+
+      if (ip) setPing(ip, null);
+    }
 
     setConnectProgress(
       targets.length > 1 ? { done: 0, total: targets.length } : null,
     );
     startConnectTransition(async () => {
+      /// IP, которые уже пинговали за этот проход: у ТИ одной группы модем
+      /// один, и пинговать его за каждую ТИ незачем.
+      const pinged = new Set<string>();
+
       for (const [index, ti] of targets.entries()) {
+        const ip = ti.group?.modem?.ip?.trim();
+
+        if (ip && !pinged.has(ip)) {
+          pinged.add(ip);
+          setConnectedText(ti.id, 'ping…');
+
+          const ping = await pingTi(projectId, ti.id);
+
+          setPing(
+            ip,
+            ping.ok ? { ok: true } : { ok: false, error: ping.error },
+          );
+        }
+
         setConnectedText(ti.id, 'подключаемся…');
 
         const result = await connectMeter(projectId, ti.id);
 
         if (result.ok) {
-          setConnectedText(ti.id, `№ ${result.reading.serialNumber}`, true);
+          setConnectedText(ti.id, `№ ${result.reading.serialNumber}`, 'ok');
         } else {
-          setConnectedText(ti.id, `нет: ${result.error}`);
+          setConnectedText(ti.id, 'не подключён', 'error', result.error);
         }
 
         if (targets.length > 1) {
