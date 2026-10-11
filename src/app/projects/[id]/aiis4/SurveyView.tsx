@@ -28,6 +28,7 @@ import {
   addTis,
   connectMeter,
   pingTi,
+  type PingResult,
   mergeTiGroups,
   splitTiGroup,
 } from './actions';
@@ -636,33 +637,40 @@ export function SurveyView({
       targets.length > 1 ? { done: 0, total: targets.length } : null,
     );
     startConnectTransition(async () => {
-      /// IP, которые уже пинговали за этот проход: у ТИ одной группы модем
-      /// один, и пинговать его за каждую ТИ незачем.
-      const pinged = new Set<string>();
+      /// Итоги ping за этот проход по IP: у ТИ одной группы модем один, и
+      /// пинговать его за каждую ТИ незачем.
+      const pinged = new Map<string, PingResult>();
 
       for (const [index, ti] of targets.entries()) {
         const ip = ti.group?.modem?.ip?.trim();
 
         if (ip && !pinged.has(ip)) {
-          pinged.add(ip);
           setConnectedText(ti.id, 'ping…');
 
           const ping = await pingTi(projectId, ti.id);
 
+          pinged.set(ip, ping);
           setPing(
             ip,
             ping.ok ? { ok: true } : { ok: false, error: ping.error },
           );
         }
 
-        setConnectedText(ti.id, 'подключаемся…');
+        /// Модем не отвечает на ping — к счётчику за ним не подключаемся.
+        const ping = ip ? pinged.get(ip) : undefined;
 
-        const result = await connectMeter(projectId, ti.id);
-
-        if (result.ok) {
-          setConnectedText(ti.id, `№ ${result.reading.serialNumber}`, 'ok');
+        if (ping && !ping.ok) {
+          setConnectedText(ti.id, 'не подключён', 'error', ping.error);
         } else {
-          setConnectedText(ti.id, 'не подключён', 'error', result.error);
+          setConnectedText(ti.id, 'подключаемся…');
+
+          const result = await connectMeter(projectId, ti.id);
+
+          if (result.ok) {
+            setConnectedText(ti.id, `№ ${result.reading.serialNumber}`, 'ok');
+          } else {
+            setConnectedText(ti.id, 'не подключён', 'error', result.error);
+          }
         }
 
         if (targets.length > 1) {
