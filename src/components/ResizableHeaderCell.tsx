@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -10,12 +10,15 @@ export function ResizableHeaderCell({
   children,
   minWidth,
   className,
+  style,
 }: {
   children: ReactNode;
   /// Меньше этого мышью не сжимаем — иначе ручка уезжает от курсора: CSS
   /// колонку уже не сужает, а ширина в состоянии продолжает падать.
   minWidth: number;
   className?: string;
+  /// Ширину ячейки задаёт сам компонент — её отсюда не переопределить.
+  style?: CSSProperties;
 }) {
   const cellRef = useRef<HTMLTableCellElement>(null);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -24,7 +27,10 @@ export function ResizableHeaderCell({
   return (
     <th
       ref={cellRef}
-      style={width === undefined ? { minWidth } : { width, minWidth: width }}
+      style={{
+        ...style,
+        ...(width === undefined ? { minWidth } : { width, minWidth: width }),
+      }}
       className={cn('relative', className)}
     >
       {children}

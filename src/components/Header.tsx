@@ -16,11 +16,13 @@ const pageTitles = {
   aiis: 'АИИС',
   aiis2: 'АИИС 2',
   aiis3: 'АИИС 3',
+  aiis4: 'АИИС 4',
   users: 'Пользователи',
   contracts: 'Договоры',
   tenders: 'Конкурсы',
   letters: 'Регистрация писем',
   warehouse: 'Склад',
+  meterreader: 'MeterReader',
 } as const;
 
 /// Шапка приложения. Липкая: список проектов длинный, а меню пользователя

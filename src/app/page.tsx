@@ -1,4 +1,5 @@
 import {
+  Activity,
   ChevronRight,
   FileText,
   Gavel,
@@ -123,6 +124,12 @@ export default async function HomePage() {
               title='Склад'
               description='Оборудование и материалы на складе'
               soon
+            />
+            <SectionLink
+              href='/meter-reader'
+              icon={Activity}
+              title='MeterReader'
+              description='Проверка снятия показаний и контроль счётчиков'
             />
             {/* Страница пользователей admin-only — как и ссылка на неё. */}
             {user.role === UserRole.Admin && (

@@ -54,7 +54,11 @@ function resolveOwners(rows: SurveyCell[][]): number[][] {
 }
 
 /// Пустая ячейка и ячейка, которой нет вовсе, — одно и то же: значения нет.
-function cellValue(owners: number[][], row: number, col: number): string | null {
+function cellValue(
+  owners: number[][],
+  row: number,
+  col: number,
+): string | null {
   const owner = owners[row]?.[col] ?? -1;
 
   if (owner < 0) return null;
@@ -85,67 +89,59 @@ function isCompliant(value: string | null): boolean | null {
   return null;
 }
 
-/// Заводит по строке общего текста на каждую группу ТИ, которую опрос объединил
-/// в одну ячейку. Возвращает id по индексу строки-владельца.
-async function createShared(
-  owners: number[][],
-  col: number,
-  create: (description: string) => Promise<{ id: string }>,
-): Promise<Map<number, string>> {
-  const byOwner = new Map<number, string>();
-  const ownerRows = new Set(
-    owners.map((row) => row[col] ?? -1).filter((owner) => owner >= 0),
-  );
-
-  for (const owner of ownerRows) {
-    const description = cellValue(owners, owner, col);
-
-    if (description === null) continue;
-
-    const { id } = await create(description);
-
-    byOwner.set(owner, id);
-  }
-
-  return byOwner;
+/// Владелец ячейки с непустым значением, а иначе -1: пустая объединённая
+/// ячейка ничего не делит, и ТИ под ней в одну группу не собираем.
+function valueOwner(owners: number[][], row: number, col: number): number {
+  return cellValue(owners, row, col) === null ? -1 : (owners[row]?.[col] ?? -1);
 }
 
 /// Переносит опрос в базу целиком: ТИ проекта пересоздаются, поэтому seed можно
 /// гонять сколько угодно раз. Счётчики, ТТ и ТН уходят каскадом вместе с ТИ, а
-/// общий текст (опрос и примечания) на ТИ не завязан — его убираем руками.
+/// общий текст (опрос и примечания) — вместе с группами ТИ.
 export async function seedTis(
   prisma: PrismaClient,
   projectId: string,
 ): Promise<number> {
-  const previous = await prisma.ti.findMany({
-    where: { projectId },
-    select: { sidePollingId: true, tisNotesId: true },
-  });
-
   await prisma.ti.deleteMany({ where: { projectId } });
-
-  const pollingIds = previous
-    .map((ti) => ti.sidePollingId)
-    .filter((id): id is string => id !== null);
-  const notesIds = previous
-    .map((ti) => ti.tisNotesId)
-    .filter((id): id is string => id !== null);
-
-  if (pollingIds.length > 0) {
-    await prisma.sidePolling.deleteMany({ where: { id: { in: pollingIds } } });
-  }
-
-  if (notesIds.length > 0) {
-    await prisma.tisNotes.deleteMany({ where: { id: { in: notesIds } } });
-  }
+  await prisma.tiGroup.deleteMany({ where: { projectId } });
 
   const owners = resolveOwners(surveyRows);
-  const polling = await createShared(owners, COL.polling, (description) =>
-    prisma.sidePolling.create({ data: { description }, select: { id: true } }),
-  );
-  const notes = await createShared(owners, COL.notes, (description) =>
-    prisma.tisNotes.create({ data: { description }, select: { id: true } }),
-  );
+  /// Группа — сочетание ячеек опроса и примечания, которые ТИ делят. Опрос
+  /// объединяет эти колонки независимо, и если объединения разошлись, одно и
+  /// то же примечание попадёт в несколько групп — у каждой своя копия.
+  const groups = new Map<string, string>();
+
+  async function groupFor(position: number): Promise<string> {
+    const pollingOwner = valueOwner(owners, position, COL.polling);
+    const notesOwner = valueOwner(owners, position, COL.notes);
+    /// Группа есть у каждой ТИ: ТИ без общего с другими текста — в своей
+    /// собственной.
+    const key =
+      pollingOwner < 0 && notesOwner < 0
+        ? `own:${position}`
+        : `${pollingOwner}:${notesOwner}`;
+    const existing = groups.get(key);
+
+    if (existing) return existing;
+
+    const polling = cellValue(owners, position, COL.polling);
+    const notes = cellValue(owners, position, COL.notes);
+    const { id } = await prisma.tiGroup.create({
+      data: {
+        projectId,
+        sidePolling:
+          polling === null ? undefined : { create: { description: polling } },
+        notes: notes === null ? undefined : { create: { description: notes } },
+        /// Модем с SIM-картой заводится с каждой группой — пустым.
+        modem: { create: { simCard: { create: {} } } },
+      },
+      select: { id: true },
+    });
+
+    groups.set(key, id);
+
+    return id;
+  }
 
   let created = 0;
 
@@ -167,8 +163,7 @@ export async function seedTis(
         number,
         name: cellValue(owners, position, COL.name) ?? '',
         position,
-        sidePollingId: polling.get(owners[position]?.[COL.polling] ?? -1),
-        tisNotesId: notes.get(owners[position]?.[COL.notes] ?? -1),
+        groupId: await groupFor(position),
         /// В опросе одна колонка на счётчик — это тот, что стоит сейчас.
         /// Какой ставим взамен, опрос не говорит, и строки new здесь нет.
         meters: hasMeter

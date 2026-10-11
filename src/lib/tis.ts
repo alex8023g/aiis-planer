@@ -4,7 +4,16 @@ import type {
 } from '@/app/projects/[id]/aiis2/survey-data';
 import { EquipmentState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
-import { Channel, ModemKind, VoltageClass } from '@/lib/types';
+import {
+  cell,
+  emptyRow,
+  spans,
+  text,
+  voltageClassLabels,
+  yesNo,
+} from '@/lib/survey-cells';
+import type { SurveyTi } from '@/lib/survey-ti';
+import { Channel, ModemKind } from '@/lib/types';
 
 /// Все поля ТИ, какие есть в схеме, — по колонке на поле. Пустых колонок тут
 /// хватает: опрос заполнил не всё, а в выгрузке трёх колонок («место
@@ -53,67 +62,9 @@ export const tiColumns: SurveyColumn[] = [
   { title: 'примечания', minWidth: 160 },
 ];
 
-/// Пустая строка во всю ширину таблицы — для проекта, у которого ТИ ещё нет.
-/// Одни заголовки над пустотой читаются как сломанная страница, а строка
-/// показывает, что таблица в порядке и ждёт данных.
-///
-/// В ячейках неразрывный пробел, а не пустая строка: у пустой ячейки нет
-/// строки текста, и высотой она была бы в одни поля — такую строку под
-/// заголовками попросту не разглядеть.
-export function emptyTiRow(): SurveyCell[] {
-  return tiColumns.map(() => ({ v: '\u00a0', bordered: true }));
-}
-
-/// Соседние ТИ, которые смотрят на одну общую строку — УСПД, модем, текст
-/// опроса, примечание, — показываем одной объединённой ячейкой. Для каждой
-/// строки возвращает высоту объединения, а для накрытых — null.
-/// Объединяются только подряд идущие: разорванную группу таблица показать не
-/// может, и такие ТИ получат каждая свою ячейку с тем же текстом.
-function spans(keys: (string | null)[]): (number | null)[] {
-  const result: (number | null)[] = keys.map(() => 1);
-  let index = 0;
-
-  while (index < keys.length) {
-    const key = keys[index];
-
-    if (key == null) {
-      index += 1;
-      continue;
-    }
-
-    let end = index + 1;
-
-    while (end < keys.length && keys[end] === key) end += 1;
-
-    result[index] = end - index;
-
-    for (let covered = index + 1; covered < end; covered += 1) {
-      result[covered] = null;
-    }
-
-    index = end;
-  }
-
-  return result;
-}
-
-/// Ячейка под объединение: накрытая — null, владелец — с rowSpan. rowSpan в 1
-/// строку не ставим: в разметке он ничего не значит, а в данных выглядит так,
-/// будто ячейку зачем-то объединили саму с собой.
-/// null и undefined здесь разное: null — «ячейку накрыли сверху, рисовать не
-/// надо», undefined — строки за пределами списка, такой вообще не бывает.
-/// Свести их вместе (span ?? 1) значит нарисовать накрытую ячейку заново.
-function cell(value: string, span: number | null | undefined): SurveyCell {
-  if (span === null) return null;
-
-  return span !== undefined && span > 1
-    ? { v: value, rowSpan: span }
-    : { v: value };
-}
-
-/// Пусто и «неизвестно» в таблице выглядят одинаково: колонка просто пустая.
-function text(value: string | null | undefined): SurveyCell {
-  return { v: value ?? '' };
+/// Пустая строка во всю ширину таблицы — см. emptyRow в src/lib/survey-cells.ts.
+export function emptyTiRow(columns: SurveyColumn[] = tiColumns): SurveyCell[] {
+  return emptyRow(columns);
 }
 
 /// Коэффициент трансформации — один на все три фазы, и стоит он рядом с
@@ -148,29 +99,9 @@ function phaseCell(
   return { v: PHASES.map((_, index) => values[index] ?? '—').join('\n') };
 }
 
-function yesNo(value: boolean | null | undefined): SurveyCell {
-  if (value === null || value === undefined) return { v: '' };
-
-  return { v: value ? 'да' : 'нет' };
-}
-
 const modemKindLabels: Record<ModemKind, string> = {
   [ModemKind.BuiltIn]: 'встроенный',
   [ModemKind.External]: 'внешний',
-};
-
-/// Класс напряжения показываем числом, как его называют вслух: «0,4», «110».
-/// Запятая — десятичный разделитель по-русски, «0.4» в таблице выглядело бы
-/// выгрузкой из чужой системы.
-const voltageClassLabels: Record<VoltageClass, string> = {
-  [VoltageClass.Kv0_4]: '0,4',
-  [VoltageClass.Kv6]: '6',
-  [VoltageClass.Kv10]: '10',
-  [VoltageClass.Kv35]: '35',
-  [VoltageClass.Kv110]: '110',
-  [VoltageClass.Kv220]: '220',
-  [VoltageClass.Kv330]: '330',
-  [VoltageClass.Kv750]: '750',
 };
 
 const channelLabels: Record<Channel, string> = {
@@ -191,10 +122,7 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       number: true,
       name: true,
       uNom: true,
-      uspdId: true,
-      modemId: true,
-      sidePollingId: true,
-      tisNotesId: true,
+      groupId: true,
       meters: {
         select: { state: true, type: true, number: true, isCompliant: true },
       },
@@ -220,29 +148,39 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
           ratio: true,
         },
       },
-      uspd: { select: { type: true, number: true } },
-      modem: {
-        select: {
-          kind: true,
-          type: true,
-          number: true,
-          simCard: { select: { number: true, ip: true, provider: true } },
-        },
-      },
       connection: {
         select: { meterAddress: true, port: true, channel: true },
       },
-      sidePolling: { select: { description: true } },
-      tisNotes: { select: { description: true } },
+      group: {
+        select: {
+          uspd: { select: { type: true, number: true } },
+          modem: {
+            select: {
+              kind: true,
+              type: true,
+              number: true,
+              simCard: { select: { number: true, ip: true, provider: true } },
+            },
+          },
+          sidePolling: { select: { description: true } },
+          notes: { select: { description: true } },
+        },
+      },
     },
   });
 
-  const uspdSpans = spans(tis.map((ti) => ti.uspdId));
+  /// Всё общее висит на группе, поэтому и объединяем по ней. Ключ — группа,
+  /// только если у неё есть это общее: иначе пустые ячейки ТИ одной группы
+  /// слились бы в одну, будто там общее значение.
+  const groupKeys = (
+    has: (group: NonNullable<(typeof tis)[number]['group']>) => boolean,
+  ) => tis.map((ti) => (ti.group && has(ti.group) ? ti.groupId : null));
+  const uspdSpans = spans(groupKeys((group) => group.uspd !== null));
   /// Модем и его SIM-карта делятся между теми же ТИ: карта висит на модеме,
   /// поэтому и объединяются они по одному ключу.
-  const modemSpans = spans(tis.map((ti) => ti.modemId));
-  const pollingSpans = spans(tis.map((ti) => ti.sidePollingId));
-  const notesSpans = spans(tis.map((ti) => ti.tisNotesId));
+  const modemSpans = spans(groupKeys((group) => group.modem !== null));
+  const pollingSpans = spans(groupKeys((group) => group.sidePolling !== null));
+  const notesSpans = spans(groupKeys((group) => group.notes !== null));
 
   return tis.map((ti, index) => {
     const current = ti.meters.find(
@@ -260,7 +198,9 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
     const tn = ti.tn[0] ?? null;
     const uspdSpan = uspdSpans[index];
     const modemSpan = modemSpans[index];
-    const sim = ti.modem?.simCard;
+    const uspd = ti.group?.uspd;
+    const modem = ti.group?.modem;
+    const sim = modem?.simCard;
 
     return [
       text(ti.number),
@@ -285,12 +225,12 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       phaseCell(tn ? [tn.numberA, tn.numberB, tn.numberC] : null),
       ratioCell(tn?.ratio),
 
-      cell(ti.uspd?.type ?? '', uspdSpan),
-      cell(ti.uspd?.number ?? '', uspdSpan),
+      cell(uspd?.type ?? '', uspdSpan),
+      cell(uspd?.number ?? '', uspdSpan),
 
-      cell(ti.modem ? modemKindLabels[ti.modem.kind] : '', modemSpan),
-      cell(ti.modem?.type ?? '', modemSpan),
-      cell(ti.modem?.number ?? '', modemSpan),
+      cell(modem?.kind ? modemKindLabels[modem.kind] : '', modemSpan),
+      cell(modem?.type ?? '', modemSpan),
+      cell(modem?.number ?? '', modemSpan),
 
       cell(sim?.number ?? '', modemSpan),
       cell(sim?.ip ?? '', modemSpan),
@@ -300,8 +240,121 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       text(ti.connection?.port),
       text(ti.connection ? channelLabels[ti.connection.channel] : ''),
 
-      cell(ti.sidePolling?.description ?? '', pollingSpans[index]),
-      cell(ti.tisNotes?.description ?? '', notesSpans[index]),
+      cell(ti.group?.sidePolling?.description ?? '', pollingSpans[index]),
+      cell(ti.group?.notes?.description ?? '', notesSpans[index]),
     ];
+  });
+}
+
+/// Как достучаться до счётчика ТИ — то, что нужно MeterReader для опроса.
+export type MeterReaderTi = {
+  id: string;
+  name: string;
+  /// IP SIM-карты модема группы: модем общий на группу, поэтому и IP у ТИ
+  /// одной группы совпадает.
+  ip: string | null;
+  port: string | null;
+  /// Связной (сетевой) адрес счётчика.
+  connectAddress: string | null;
+};
+
+/// ТИ проекта для MeterReader — в том порядке, в котором их записал
+/// составитель. Доступ не проверяется, как и в getTiRows.
+export async function getMeterReaderTis(
+  projectId: string,
+): Promise<MeterReaderTi[]> {
+  const tis = await prisma.ti.findMany({
+    where: { projectId },
+    orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+    select: {
+      id: true,
+      name: true,
+      connection: { select: { meterAddress: true, port: true } },
+      group: {
+        select: {
+          modem: { select: { simCard: { select: { ip: true } } } },
+        },
+      },
+    },
+  });
+
+  return tis.map((ti) => ({
+    id: ti.id,
+    name: ti.name,
+    ip: ti.group?.modem?.simCard?.ip ?? null,
+    port: ti.connection?.port ?? null,
+    connectAddress: ti.connection?.meterAddress ?? null,
+  }));
+}
+
+/// ТИ проекта для таблицы опроса (aiis4) — в том порядке, в котором их
+/// записал составитель. Значения как в базе: ячейки из них собирает клиент
+/// (surveyTiCells в src/lib/survey-ti.ts). Доступ не проверяется, как и в
+/// getTiRows.
+export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
+  const tis = await prisma.ti.findMany({
+    where: { projectId },
+    orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+    select: {
+      id: true,
+      number: true,
+      name: true,
+      uNom: true,
+      wiring: true,
+      isPolled: true,
+      freeRs485: true,
+      connection: { select: { meterAddress: true, port: true } },
+      meters: {
+        where: {
+          state: { in: [EquipmentState.current, EquipmentState.proposed] },
+        },
+        select: { state: true, type: true, isCompliant: true },
+      },
+      group: {
+        select: {
+          id: true,
+          modem: {
+            select: {
+              kind: true,
+              type: true,
+              simCard: { select: { ip: true } },
+            },
+          },
+          technicalSolution: { select: { description: true } },
+        },
+      },
+    },
+  });
+
+  return tis.map(({ meters, group, connection, ...ti }) => {
+    const current = meters.find(
+      (meter) => meter.state === EquipmentState.current,
+    );
+    const proposed = meters.find(
+      (meter) => meter.state === EquipmentState.proposed,
+    );
+
+    return {
+      ...ti,
+      meterAddress: connection?.meterAddress ?? null,
+      port: connection?.port ?? null,
+      currentMeter: current
+        ? { type: current.type, isCompliant: current.isCompliant }
+        : null,
+      proposedMeter: proposed ? { type: proposed.type } : null,
+      group: group
+        ? {
+            id: group.id,
+            technicalSolution: group.technicalSolution?.description ?? null,
+            modem: group.modem
+              ? {
+                  kind: group.modem.kind,
+                  type: group.modem.type,
+                  ip: group.modem.simCard?.ip ?? null,
+                }
+              : null,
+          }
+        : null,
+    };
   });
 }
