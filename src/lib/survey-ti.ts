@@ -20,7 +20,7 @@ import {
   voltageClassLabels,
   yesNo,
 } from '@/lib/survey-cells';
-import { ModemKind, WiringScheme } from '@/lib/types';
+import { ModemKind, VoltageClass, WiringScheme } from '@/lib/types';
 
 /// Строка таблицы опроса. Типы перечислений — из Prisma: ровно то, что отдаёт
 /// запрос (см. getSurveyTis в src/lib/tis.ts), без пересборки.
@@ -75,29 +75,133 @@ export const surveyTiColumns: SurveyColumn[] = [
 ];
 
 /// Схему включения пишем так же, как в опросе, — сокращением.
-const wiringLabels: Record<WiringScheme, string> = {
+export const wiringLabels: Record<WiringScheme, string> = {
   [WiringScheme.Direct]: 'прям.',
   [WiringScheme.SemiIndirect]: 'полукос.',
   [WiringScheme.Indirect]: 'косв.',
 };
 
+/// Uном из текста ячейки: «0,4», «0.4», «0,4 кВ» — всё 0,4 кВ. null —
+/// пустая ячейка («не выяснили»), undefined — такого класса напряжения нет.
+export function parseVoltageClass(
+  value: string,
+): DbVoltageClass | null | undefined {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/\s*кв$/, '')
+    .replace('.', ',');
+
+  if (normalized === '') return null;
+
+  return (Object.keys(voltageClassLabels) as VoltageClass[]).find(
+    (kind) => voltageClassLabels[kind] === normalized,
+  );
+}
+
+/// Схема включения из текста ячейки — по началу слова: «прям.», «прямое»,
+/// «полукосвенное», «косв.». null — пустая ячейка, undefined — не схема.
+export function parseWiringScheme(
+  value: string,
+): DbWiringScheme | null | undefined {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === '') return null;
+  /// «Полукосвенное» тоже содержит «кос» — проверяем его первым.
+  if (normalized.startsWith('полукос')) return WiringScheme.SemiIndirect;
+  if (normalized.startsWith('кос')) return WiringScheme.Indirect;
+  if (normalized.startsWith('прям')) return WiringScheme.Direct;
+
+  return undefined;
+}
+
 /// Модем в «опрашивается» — как в опросе: «да, по встр. модему».
-const pollingModemLabels: Record<ModemKind, string> = {
+export const pollingModemLabels: Record<ModemKind, string> = {
   [ModemKind.BuiltIn]: 'по встр. модему',
   [ModemKind.External]: 'по внеш. модему',
 };
 
 /// «Опрашивается»: да/нет из ТИ и, если опрашивается, через какой модем — его
 /// вид лежит на группе.
-function pollingText(isPolled: boolean | null, modemLabel?: string): string {
+export function pollingText(
+  isPolled: boolean | null,
+  modemLabel?: string,
+): string {
   if (isPolled === null) return '';
   if (!isPolled) return 'нет';
 
   return modemLabel ? `да, ${modemLabel}` : 'да';
 }
 
+/// Да/нет из текста ячейки: «да», «Да», «нет». null — пустая ячейка
+/// («не выяснили»), undefined — ни то, ни другое.
+export function parseYesNo(value: string): boolean | null | undefined {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === '') return null;
+  if (normalized.startsWith('да')) return true;
+  if (normalized.startsWith('нет')) return false;
+
+  return undefined;
+}
+
+/// «Опрашивается» из текста ячейки — как его пишет pollingText: «нет», «да»,
+/// «да, по встр. модему». modemKind — вид модема, если его назвали; не
+/// назвали — вид модема группы не трогаем. undefined — текст не разобрать.
+export function parsePolling(
+  value: string,
+):
+  | { isPolled: boolean | null; modemKind?: DbModemKind }
+  | undefined {
+  const isPolled = parseYesNo(value);
+
+  if (isPolled === undefined) return undefined;
+  if (!isPolled) return { isPolled };
+
+  const normalized = value.toLowerCase();
+
+  if (normalized.includes('встр')) {
+    return { isPolled, modemKind: ModemKind.BuiltIn };
+  }
+
+  if (normalized.includes('внеш')) {
+    return { isPolled, modemKind: ModemKind.External };
+  }
+
+  return { isPolled };
+}
+
+/// Почему текст не годится для поля-перечисления (Uном, схема, да/нет); null
+/// — годится, или поле текстовое. Одна проверка на клиент и экшен: клиент
+/// показывает ошибку сразу, экшен — на случай вызова в обход таблицы.
+export function invalidValueError(field: string, value: string): string | null {
+  const shown = `«${value.trim()}»`;
+
+  switch (field) {
+    case 'uNom':
+      return parseVoltageClass(value) === undefined
+        ? `${shown} — не класс напряжения`
+        : null;
+    case 'wiring':
+      return parseWiringScheme(value) === undefined
+        ? `${shown} — не схема включения (прям., полукос., косв.)`
+        : null;
+    case 'isPolled':
+      return parsePolling(value) === undefined
+        ? `${shown} — не «да» и не «нет»`
+        : null;
+    case 'freeRs485':
+    case 'needsReplacement':
+      return parseYesNo(value) === undefined
+        ? `${shown} — не «да» и не «нет»`
+        : null;
+    default:
+      return null;
+  }
+}
+
 /// «Требуется замена» — обратное к «соответствует требованиям».
-function needsReplacement(ti: SurveyTi): boolean | null {
+export function needsReplacement(ti: SurveyTi): boolean | null {
   const isCompliant = ti.currentMeter?.isCompliant;
 
   return isCompliant === null || isCompliant === undefined

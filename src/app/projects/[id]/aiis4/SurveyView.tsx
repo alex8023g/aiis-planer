@@ -14,14 +14,29 @@ import {
 import {
   updateMeterReaderCells,
   type MeterReaderEdit,
+  type MeterReaderField,
 } from '@/app/projects/[id]/meter-reader/actions';
 import { CellEditor } from '@/components/CellEditor';
 import { SurveyTable, type SurveyCellProps } from '@/components/SurveyTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { copyText, parseClipboard } from '@/lib/clipboard';
-import { emptyRow } from '@/lib/survey-cells';
-import { surveyTiCells, surveyTiColumns, type SurveyTi } from '@/lib/survey-ti';
+import { emptyRow, voltageClassLabels, yesNo } from '@/lib/survey-cells';
+import {
+  invalidValueError,
+  needsReplacement,
+  parsePolling,
+  parseVoltageClass,
+  parseWiringScheme,
+  parseYesNo,
+  pollingModemLabels,
+  pollingText,
+  surveyTiCells,
+  surveyTiColumns,
+  wiringLabels,
+  type SurveyTi,
+} from '@/lib/survey-ti';
+import type { ModemKind } from '@/generated/prisma/enums';
 import { cn } from '@/lib/utils';
 
 import {
@@ -35,10 +50,9 @@ import {
 import { useCellSelection } from './useCellSelection';
 
 /// Колонки, где в режиме правки можно выделять ячейки (индексы в
-/// surveyTiColumns): «наименование ТИ», «тех. решение», «опрос», «IP» и
-/// «адрес счётчика». Выделение одно на таблицу — клик в другой колонке
+/// surveyTiColumns): правимые (EDITABLE_COLUMNS) и «опрос». Выделение одно на таблицу — клик в другой колонке
 /// переносит его туда. В режиме просмотра клик выделяет строку целиком.
-const SELECTABLE_COLUMNS = [1, 8, 10, 11, 12];
+const SELECTABLE_COLUMNS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 /// Колонка «тех. решение» в surveyTiColumns.
 const SOLUTION_COLUMN = 8;
 /// Колонка «IP» в surveyTiColumns.
@@ -49,13 +63,20 @@ const CONNECTED_COLUMN = 13;
 /// Итог проверки для точки в ячейке: зелёная — ок, красная — нет. error —
 /// почему нет, во всплывающей подсказке.
 type CheckStatus = { ok: boolean; error?: string };
-/// Колонки, что правятся в режиме правки, и поле под каждой. IP — у модема
-/// группы (ячейка объединена на группу), наименование и адрес — свои у
-/// каждой ТИ.
-const EDITABLE_COLUMNS: Partial<
-  Record<number, 'name' | 'ip' | 'connectAddress'>
-> = {
+/// Колонки, что правятся в режиме правки, и поле под каждой. Тех. решение
+/// и IP — общие на группу (ячейка объединена на группу), остальное — своё у
+/// каждой ТИ. Uном, схема, «требуется замена», «опрашивается» и RS-485 —
+/// перечисления и да/нет: текст ячейки разбирают parse* из survey-ti.
+const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
   1: 'name',
+  2: 'uNom',
+  3: 'meterType',
+  4: 'wiring',
+  5: 'needsReplacement',
+  6: 'isPolled',
+  7: 'freeRs485',
+  8: 'technicalSolution',
+  9: 'proposedMeterType',
   11: 'ip',
   12: 'connectAddress',
 };
@@ -67,6 +88,28 @@ function fieldValue(ti: SurveyTi | undefined, col: number): string {
   switch (EDITABLE_COLUMNS[col]) {
     case 'name':
       return ti.name;
+    case 'uNom':
+      return ti.uNom ? voltageClassLabels[ti.uNom] : '';
+    case 'meterType':
+      return ti.currentMeter?.type ?? '';
+    case 'wiring':
+      return ti.wiring ? wiringLabels[ti.wiring] : '';
+    case 'needsReplacement':
+      return yesNo(needsReplacement(ti))?.v ?? '';
+    case 'isPolled': {
+      const kind = ti.group?.modem?.kind;
+
+      return pollingText(
+        ti.isPolled,
+        kind ? pollingModemLabels[kind] : undefined,
+      );
+    }
+    case 'freeRs485':
+      return yesNo(ti.freeRs485)?.v ?? '';
+    case 'technicalSolution':
+      return ti.group?.technicalSolution ?? '';
+    case 'proposedMeterType':
+      return ti.proposedMeter?.type ?? '';
     case 'ip':
       return ti.group?.modem?.ip ?? '';
     default:
@@ -74,48 +117,131 @@ function fieldValue(ti: SurveyTi | undefined, col: number): string {
   }
 }
 
-/// Правки поверх ТИ — то, что видно в таблице, пока экшен пишет в базу. IP
-/// висит на модеме группы, поэтому меняется у всех ТИ группы сразу;
-/// наименование и адрес — только у своей ТИ.
+type GroupPatch = {
+  technicalSolution?: string | null;
+  ip?: string | null;
+  kind?: ModemKind;
+};
+
+/// Правки поверх ТИ — то, что видно в таблице, пока экшен пишет в базу.
+/// Решение, IP и вид модема висят на группе, поэтому меняются у всех ТИ
+/// группы сразу; остальное — только у своей ТИ. Нераспознанный текст не
+/// показываем: save его и не отправит.
 function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
-  const groupIps = new Map<string, string | null>();
-  const names = new Map<string, string>();
-  const addresses = new Map<string, string | null>();
+  const tiPatches = new Map<string, Partial<SurveyTi>>();
+  const groupPatches = new Map<string, GroupPatch>();
+  const groupOf = new Map(tis.map((ti) => [ti.id, ti.group?.id]));
+
+  function patchTi(ti: SurveyTi | undefined, patch: Partial<SurveyTi>) {
+    if (ti) tiPatches.set(ti.id, { ...tiPatches.get(ti.id), ...patch });
+  }
+
+  function patchGroup(tiId: string, patch: GroupPatch) {
+    const groupId = groupOf.get(tiId);
+
+    if (groupId) {
+      groupPatches.set(groupId, { ...groupPatches.get(groupId), ...patch });
+    }
+  }
 
   for (const { tiId, field, value } of edits) {
+    const ti = tis.find((item) => item.id === tiId);
     const trimmed = value.trim() === '' ? null : value.trim();
 
-    if (field === 'name') {
-      /// Наименование обязательное: пустое — '', а не null, как и в экшене.
-      names.set(tiId, value.trim());
-    } else if (field === 'connectAddress') {
-      addresses.set(tiId, trimmed);
-    } else if (field === 'ip') {
-      const groupId = tis.find((ti) => ti.id === tiId)?.group?.id;
+    switch (field) {
+      case 'name':
+        /// Наименование обязательное: пустое — '', а не null, как и в экшене.
+        patchTi(ti, { name: value.trim() });
+        break;
+      case 'connectAddress':
+        patchTi(ti, { meterAddress: trimmed });
+        break;
+      case 'meterType':
+        patchTi(ti, {
+          currentMeter: {
+            isCompliant: ti?.currentMeter?.isCompliant ?? null,
+            type: trimmed,
+          },
+        });
+        break;
+      case 'needsReplacement': {
+        const needs = parseYesNo(value);
 
-      if (groupId) groupIps.set(groupId, trimmed);
+        if (needs !== undefined) {
+          patchTi(ti, {
+            currentMeter: {
+              type: ti?.currentMeter?.type ?? null,
+              isCompliant: needs === null ? null : !needs,
+            },
+          });
+        }
+        break;
+      }
+      case 'proposedMeterType':
+        patchTi(ti, { proposedMeter: { type: trimmed } });
+        break;
+      case 'uNom': {
+        const uNom = parseVoltageClass(value);
+
+        if (uNom !== undefined) patchTi(ti, { uNom });
+        break;
+      }
+      case 'wiring': {
+        const wiring = parseWiringScheme(value);
+
+        if (wiring !== undefined) patchTi(ti, { wiring });
+        break;
+      }
+      case 'freeRs485': {
+        const freeRs485 = parseYesNo(value);
+
+        if (freeRs485 !== undefined) patchTi(ti, { freeRs485 });
+        break;
+      }
+      case 'isPolled': {
+        const polling = parsePolling(value);
+
+        if (polling) {
+          patchTi(ti, { isPolled: polling.isPolled });
+
+          if (polling.modemKind) {
+            patchGroup(tiId, { kind: polling.modemKind });
+          }
+        }
+        break;
+      }
+      case 'technicalSolution':
+        patchGroup(tiId, { technicalSolution: trimmed });
+        break;
+      case 'ip':
+        patchGroup(tiId, { ip: trimmed });
+        break;
     }
   }
 
   return tis.map((ti) => {
     let next = ti;
+    const tiPatch = tiPatches.get(ti.id);
 
-    if (names.has(ti.id)) {
-      next = { ...next, name: names.get(ti.id)! };
-    }
+    if (tiPatch) next = { ...next, ...tiPatch };
 
-    if (addresses.has(ti.id)) {
-      next = { ...next, meterAddress: addresses.get(ti.id) ?? null };
-    }
+    const group = next.group;
+    const groupPatch = group ? groupPatches.get(group.id) : undefined;
 
-    const modem = next.group?.modem;
+    if (group && groupPatch) {
+      const { technicalSolution, ip, kind } = groupPatch;
+      const modem = group.modem;
 
-    if (next.group && modem && groupIps.has(next.group.id)) {
       next = {
         ...next,
         group: {
-          ...next.group,
-          modem: { ...modem, ip: groupIps.get(next.group.id) ?? null },
+          ...group,
+          ...(technicalSolution !== undefined && { technicalSolution }),
+          modem: modem && {
+            ...modem,
+            ...(ip !== undefined && { ip }),
+            ...(kind !== undefined && { kind }),
+          },
         },
       };
     }
@@ -237,6 +363,14 @@ export function SurveyView({
   function save(edits: MeterReaderEdit[]) {
     if (edits.length === 0) return;
 
+    /// Перечисления и да/нет: нераспознанный текст экшен всё равно
+    /// отклонит, а так ошибка видна сразу, без запроса.
+    for (const { field, value } of edits) {
+      const invalid = invalidValueError(field, value);
+
+      if (invalid) return setError(invalid);
+    }
+
     setError(null);
     /// Не прошёл экшен — оптимистичные значения откатятся сами с концом
     /// перехода.
@@ -271,14 +405,16 @@ export function SurveyView({
     return fieldValue(optimisticTis[row], col);
   }
 
-  /// Правка ячейки — через её первую ТИ: для IP экшен сам найдёт модем
-  /// группы.
-  function edit(row: number, col: number, value: string): MeterReaderEdit {
-    return {
-      tiId: optimisticTis[row].id,
-      field: EDITABLE_COLUMNS[col]!,
-      value,
-    };
+  /// Правка ячейки — через её первую ТИ: для IP и решения экшен сам найдёт
+  /// группу. «Опрашивается» — своё у каждой ТИ, а объединённая ячейка
+  /// накрывает ТИ группы с одинаковым текстом: правка — каждой из них.
+  function edit(row: number, col: number, value: string): MeterReaderEdit[] {
+    const field = EDITABLE_COLUMNS[col]!;
+    const span = field === 'isPolled' ? (rows[row][col]?.rowSpan ?? 1) : 1;
+
+    return optimisticTis
+      .slice(row, row + span)
+      .map((ti) => ({ tiId: ti.id, field, value }));
   }
 
   function finishEditing(value: string | null, refocus: boolean) {
@@ -289,7 +425,7 @@ export function SurveyView({
     setEditing(null);
 
     if (value !== null && value.trim() !== valueAt(row, col)) {
-      save([edit(row, col, value)]);
+      save(edit(row, col, value));
     }
 
     /// Поле исчезнет только после перерисовки — фокус возвращаем следом.
@@ -324,7 +460,7 @@ export function SurveyView({
       save(
         selectedCells(col)
           .filter((cellRow) => valueAt(cellRow, col) !== '')
-          .map((cellRow) => edit(cellRow, col, '')),
+          .flatMap((cellRow) => edit(cellRow, col, '')),
       );
       return true;
     }
@@ -366,7 +502,7 @@ export function SurveyView({
     save(
       targets
         .filter(([row, value]) => value.trim() !== valueAt(row, col))
-        .map(([row, value]) => edit(row, col, value)),
+        .flatMap(([row, value]) => edit(row, col, value)),
     );
   }
 

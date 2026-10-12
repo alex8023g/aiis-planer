@@ -52,7 +52,14 @@ function applyEdits(tis: MeterReaderTi[], edits: MeterReaderEdit[]) {
       const trimmed = value.trim();
 
       if (field === 'name') next.name = trimmed;
-      else next[field] = trimmed === '' ? null : trimmed;
+      /// Остальные поля правит только опрос (aiis4) — в этой таблице их нет.
+      else if (
+        field === 'ip' ||
+        field === 'port' ||
+        field === 'connectAddress'
+      ) {
+        next[field] = trimmed === '' ? null : trimmed;
+      }
     }
 
     return next;
