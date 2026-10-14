@@ -282,8 +282,8 @@ model Session {
 
 model Account {
   id                    String    @id
-  /// Издатель OAuth-провайдера; вместе с accountId — ключ поиска аккаунта.
-  issuer                String
+  /// Необязательные метаданные; Better Auth не задаёт это поле при создании аккаунта.
+  issuer                String?
   accountId             String
   providerId            String
   userId                String
@@ -299,7 +299,7 @@ model Account {
   updatedAt             DateTime  @updatedAt
 
   @@index([userId])
-  @@index([issuer, accountId])
+  @@index([providerId, accountId])
   @@map("account")
 }
 
