@@ -566,7 +566,7 @@ function decodeProfilePointerResponse(response: Buffer, address: number, mode: C
   if (data.length !== 7) {
     throw new MeterReaderError(`Expected 7 profile-pointer bytes, received ${data.length}: ${hexBytes(response)}`);
   }
-  const minute = decodeBcd(data[0]!, "profile pointer minute");
+  const minute = decodeBcd(data[0]! & 0x7f, "profile pointer minute");
   const hour = decodeBcd(data[1]!, "profile pointer hour");
   const day = decodeBcd(data[2]!, "profile pointer day");
   const month = decodeBcd(data[3]!, "profile pointer month");

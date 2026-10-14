@@ -1,4 +1,4 @@
-import type { CSSProperties, TdHTMLAttributes } from 'react';
+import type { CSSProperties, HTMLAttributes, TdHTMLAttributes } from 'react';
 
 import type {
   SurveyCell,
@@ -93,6 +93,8 @@ export type SurveyCellProps = Omit<
   'rowSpan' | 'colSpan' | 'style'
 > & { [data: `data-${string}`]: string | number | undefined };
 
+export type SurveyRowProps = HTMLAttributes<HTMLTableRowElement>;
+
 /// Таблица опроса из выгрузки Numbers — только показ: ни сортировки, ни правки,
 /// ни сохранения. Серверный компонент: данные статические, на клиенте живут
 /// только ручки ширины колонок и замер липких колонок. Выделение и прочее
@@ -103,6 +105,7 @@ export function SurveyTable({
   stickyColumns = 0,
   mergedBorders = false,
   verticalAlign = 'top',
+  rowProps,
   cellProps,
   className,
 }: {
@@ -121,6 +124,8 @@ export function SurveyTable({
   /// пофазные ячейки aiis3; по центру — когда в строке по одному значению и
   /// объединённые ячейки должны держать текст посередине своих строк.
   verticalAlign?: 'top' | 'middle';
+  /// Свойства строки по индексу, например обработчики выбора строки.
+  rowProps?: (row: number) => SurveyRowProps | undefined;
   /// Свойства ячейки по её строке и колонке (индексы в rows). Передаёт только
   /// клиентский вызывающий: функцию с сервера в браузер не передать.
   cellProps?: (row: number, col: number) => SurveyCellProps | undefined;
@@ -161,64 +166,72 @@ export function SurveyTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((row, rowIndex) => (
-          <tr
-            key={rowIndex}
-            /// Границу строк рисуем на самой строке: при border-collapse
-            /// побеждает более толстая, и 2px перекрывают и обычную линию, и
-            /// низ объединённой ячейки, и стык под липкими колонками.
-            className={cn(
-              /// У последней строки тоже: таблица обычно ниже рамки не доходит,
-              /// и без черты низ последней строки сливается с пустотой под ней.
-              'border-b border-neutral-100 dark:border-neutral-800/60',
-              boundaries?.has(rowIndex) &&
-                'border-b-2 border-neutral-400 dark:border-neutral-600',
-              rowIndex === 0 &&
-                boundaries?.has(-1) &&
-                'border-t-2 border-t-neutral-400 dark:border-t-neutral-600',
-            )}
-          >
-            {row.map((cell, columnIndex) => {
-              /// Накрытую объединением ячейку не рисуем совсем — иначе строка
-              /// разъедется вправо на ширину лишней колонки.
-              if (cell === null) return null;
+        {rows.map((row, rowIndex) => {
+          const extraRow = rowProps?.(rowIndex);
 
-              const sticky = columnIndex < stickyColumns;
-              const extra = cellProps?.(rowIndex, columnIndex);
+          return (
+            <tr
+              {...extraRow}
+              key={rowIndex}
+              /// Границу строк рисуем на самой строке: при border-collapse
+              /// побеждает более толстая, и 2px перекрывают и обычную линию, и
+              /// низ объединённой ячейки, и стык под липкими колонками.
+              className={cn(
+                extraRow?.className,
+                /// У последней строки тоже: таблица обычно ниже рамки не доходит,
+                /// и без черты низ последней строки сливается с пустотой под ней.
+                'border-b border-neutral-100 dark:border-neutral-800/60',
+                boundaries?.has(rowIndex) &&
+                  'border-b-2 border-neutral-400 dark:border-neutral-600',
+                rowIndex === 0 &&
+                  boundaries?.has(-1) &&
+                  'border-t-2 border-t-neutral-400 dark:border-t-neutral-600',
+              )}
+            >
+              {row.map((cell, columnIndex) => {
+                /// Накрытую объединением ячейку не рисуем совсем — иначе строка
+                /// разъедется вправо на ширину лишней колонки.
+                if (cell === null) return null;
 
-              return (
-                <td
-                  {...extra}
-                  key={columnIndex}
-                  rowSpan={cell.rowSpan}
-                  colSpan={cell.colSpan}
-                  style={sticky ? stickyStyle(columns, columnIndex) : undefined}
-                  /// Переносы строк внутри ячейки значимы: в опросе ими
-                  /// разделены варианты решения.
-                  className={cn(
-                    'px-4 py-2 whitespace-pre-line',
-                    (cell.align ?? verticalAlign) === 'middle'
-                      ? 'align-middle'
-                      : 'align-top',
-                    cell.bordered &&
-                      'border border-neutral-200 dark:border-neutral-800',
-                    sticky && stickyClass(columnIndex, stickyColumns),
-                    columnIndex === 0 &&
-                      grouped?.has(rowIndex) &&
-                      (stickyColumns === 1
-                        ? GROUP_EDGE_LAST_STICKY
-                        : GROUP_EDGE),
-                    extra?.className,
-                  )}
-                >
-                  {/* Вызывающий может подменить содержимое — например, полем
+                const sticky = columnIndex < stickyColumns;
+                const extra = cellProps?.(rowIndex, columnIndex);
+
+                return (
+                  <td
+                    {...extra}
+                    key={columnIndex}
+                    rowSpan={cell.rowSpan}
+                    colSpan={cell.colSpan}
+                    style={
+                      sticky ? stickyStyle(columns, columnIndex) : undefined
+                    }
+                    /// Переносы строк внутри ячейки значимы: в опросе ими
+                    /// разделены варианты решения.
+                    className={cn(
+                      'px-4 py-2 whitespace-pre-line',
+                      (cell.align ?? verticalAlign) === 'middle'
+                        ? 'align-middle'
+                        : 'align-top',
+                      cell.bordered &&
+                        'border border-neutral-200 dark:border-neutral-800',
+                      sticky && stickyClass(columnIndex, stickyColumns),
+                      columnIndex === 0 &&
+                        grouped?.has(rowIndex) &&
+                        (stickyColumns === 1
+                          ? GROUP_EDGE_LAST_STICKY
+                          : GROUP_EDGE),
+                      extra?.className,
+                    )}
+                  >
+                    {/* Вызывающий может подменить содержимое — например, полем
                       правки ячейки. */}
-                  {extra?.children ?? cell.v}
-                </td>
-              );
-            })}
-          </tr>
-        ))}
+                    {extra?.children ?? cell.v}
+                  </td>
+                );
+              })}
+            </tr>
+          );
+        })}
       </tbody>
     </SurveyTableFrame>
   );
