@@ -23,6 +23,7 @@ import {
 /// Колонки таблицы MeterReader, которые можно править. Всё после
 /// connectAddress — только у таблицы опроса (aiis4).
 export type MeterReaderField =
+  | 'number'
   | 'name'
   | 'ip'
   | 'port'
@@ -43,6 +44,7 @@ export type MeterReaderEdit = {
 };
 
 const FIELDS = new Set<string>([
+  'number',
   'name',
   'ip',
   'port',
@@ -176,7 +178,9 @@ export async function updateMeterReaderCells(
       /// Пустое в необязательных полях — «не знаем», то есть null, а не ''.
       const nullable = trimmed === '' ? null : trimmed;
 
-      if (field === 'name') {
+      if (field === 'number') {
+        await tx.ti.update({ where: { id: tiId }, data: { number: trimmed } });
+      } else if (field === 'name') {
         await tx.ti.update({ where: { id: tiId }, data: { name: trimmed } });
       } else if (field === 'port' || field === 'connectAddress') {
         const data =

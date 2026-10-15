@@ -52,13 +52,13 @@ import { useCellSelection } from './useCellSelection';
 /// Колонки, где в режиме правки можно выделять ячейки (индексы в
 /// surveyTiColumns): правимые (EDITABLE_COLUMNS) и «опрос». Выделение одно на таблицу — клик в другой колонке
 /// переносит его туда. В режиме просмотра клик выделяет строку целиком.
-const SELECTABLE_COLUMNS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+const SELECTABLE_COLUMNS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 /// Колонка «тех. решение» в surveyTiColumns.
-const SOLUTION_COLUMN = 8;
+const SOLUTION_COLUMN = 9;
 /// Колонка «IP» в surveyTiColumns.
-const IP_COLUMN = 11;
+const IP_COLUMN = 12;
 /// Колонка «подключён» в surveyTiColumns.
-const CONNECTED_COLUMN = 13;
+const CONNECTED_COLUMN = 14;
 
 /// Итог проверки для точки в ячейке: зелёная — ок, красная — нет. error —
 /// почему нет, во всплывающей подсказке.
@@ -68,17 +68,18 @@ type CheckStatus = { ok: boolean; error?: string };
 /// каждой ТИ. Uном, схема, «требуется замена», «опрашивается» и RS-485 —
 /// перечисления и да/нет: текст ячейки разбирают parse* из survey-ti.
 const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
-  1: 'name',
-  2: 'uNom',
-  3: 'meterType',
-  4: 'wiring',
-  5: 'needsReplacement',
-  6: 'isPolled',
-  7: 'freeRs485',
-  8: 'technicalSolution',
-  9: 'proposedMeterType',
-  11: 'ip',
-  12: 'connectAddress',
+  1: 'number',
+  2: 'name',
+  3: 'uNom',
+  4: 'meterType',
+  5: 'wiring',
+  6: 'needsReplacement',
+  7: 'isPolled',
+  8: 'freeRs485',
+  9: 'technicalSolution',
+  10: 'proposedMeterType',
+  12: 'ip',
+  13: 'connectAddress',
 };
 
 /// Значение правимой ячейки так, как его показывает таблица.
@@ -86,6 +87,8 @@ function fieldValue(ti: SurveyTi | undefined, col: number): string {
   if (!ti) return '';
 
   switch (EDITABLE_COLUMNS[col]) {
+    case 'number':
+      return ti.number;
     case 'name':
       return ti.name;
     case 'uNom':
@@ -149,6 +152,9 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
     const trimmed = value.trim() === '' ? null : value.trim();
 
     switch (field) {
+      case 'number':
+        patchTi(ti, { number: value.trim() });
+        break;
       case 'name':
         /// Наименование обязательное: пустое — '', а не null, как и в экшене.
         patchTi(ti, { name: value.trim() });
@@ -539,8 +545,8 @@ export function SurveyView({
       .join('\t');
   }
 
-  /// Перейти к строке: выделить и прокрутить к ней. Первая колонка — № ТИ —
-  /// у каждой строки своя, её ячейка есть всегда.
+  /// Перейти к строке: выделить и прокрутить к ней. У первой, пустой колонки
+  /// всегда есть ячейка, поэтому она остаётся надёжным ориентиром.
   function goToRow(row: number) {
     setSelectedRow(row);
     document
@@ -578,7 +584,8 @@ export function SurveyView({
     goToRow(next);
   }
 
-  /// Свойства ячеек в режиме просмотра: клик в любую ячейку выделяет строку.
+  /// Свойства ячеек при выборе строки: в просмотре клик в любую ячейку
+  /// выделяет строку, в правке это делает только первая пустая колонка.
   /// Подсвечиваются только ячейки самой строки: объединённая ячейка группы,
   /// подсвеченная во всю высоту, читалась бы как выделение всей группы.
   /// Копируется строка всё же с ними — их значение относится и к этой ТИ.
@@ -667,12 +674,43 @@ export function SurveyView({
 
     const props = selection.cellProps(row, col);
 
-    if (EDITABLE_COLUMNS[col] === undefined || !props) return props;
+    if (col === 0) {
+      const rowProps = rowCellProps(row, col);
+
+      if (!rowProps) return rowProps;
+
+      return {
+        ...rowProps,
+        onMouseDown: (event: MouseEvent<HTMLTableCellElement>) => {
+          selection.clear();
+          rowProps.onMouseDown?.(event);
+        },
+      };
+    }
+
+    if (!props) return props;
+
+    const rowSelected =
+      row === selectedRow && (rows[row][col]?.rowSpan ?? 1) === 1;
+    const cellProps: SurveyCellProps = {
+      ...props,
+      'aria-selected': rowSelected || props['aria-selected'],
+      onMouseDown: (event: MouseEvent<HTMLTableCellElement>) => {
+        setSelectedRow(null);
+        props.onMouseDown?.(event);
+      },
+      className: cn(
+        props.className,
+        rowSelected && 'bg-blue-50 dark:bg-blue-950',
+      ),
+    };
+
+    if (EDITABLE_COLUMNS[col] === undefined) return cellProps;
 
     const isEditing = editing?.row === row && editing.col === col;
 
     return {
-      ...props,
+      ...cellProps,
       onKeyDown: (event: KeyboardEvent<HTMLTableCellElement>) => {
         if (!handleEditKeyDown(event, row, col)) props.onKeyDown?.(event);
       },
@@ -920,9 +958,9 @@ export function SurveyView({
       <SurveyTable
         columns={surveyTiColumns}
         rows={rows}
-        /// № и наименование ТИ не уезжают при прокрутке вбок: без них
+        /// Пустая колонка, № и наименование ТИ не уезжают при прокрутке вбок: без них
         /// в правых колонках не понять, о какой ТИ строка.
-        stickyColumns={2}
+        stickyColumns={3}
         /// Объединённые ячейки — группы ТИ: жирная граница строк во всю
         /// ширину показывает, где группа начинается и кончается.
         mergedBorders
