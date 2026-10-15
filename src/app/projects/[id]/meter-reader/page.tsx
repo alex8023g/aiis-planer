@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 
 import { Header } from '@/components/Header';
-import { canEditProject, getProject } from '@/lib/projects';
+import { getProject } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import { getMeterReaderTis } from '@/lib/tis';
 
@@ -40,11 +40,7 @@ export default async function MeterReaderPage({
             В проекте пока нет ТИ.
           </p>
         ) : (
-          <MeterReaderTable
-            projectId={project.id}
-            tis={tis}
-            canEdit={canEditProject(project, user)}
-          />
+          <MeterReaderTable projectId={project.id} tis={tis} />
         )}
       </main>
     </div>
