@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation';
 
+import { AiisProjectSwitcher } from '@/components/AiisProjectSwitcher';
 import { Header } from '@/components/Header';
-import { canEditProject, getProject } from '@/lib/projects';
+import { canEditProject, getProject, getProjects } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import { getSurveyTis } from '@/lib/tis';
 
@@ -24,8 +25,10 @@ export default async function Aiis4Page({
   /// проект, и «нет проекта» с «нет доступа» отвечают одинаково.
   if (!project) notFound();
 
-  const tis = await getSurveyTis(id);
-  console.log('🚀 ~ Aiis4Page ~ tis:', tis);
+  const [projects, tis] = await Promise.all([
+    getProjects(user),
+    getSurveyTis(id),
+  ]);
 
   return (
     /// Страница занимает ровно экран: прокручивается таблица, а не документ,
@@ -34,7 +37,15 @@ export default async function Aiis4Page({
       <Header
         user={user}
         current='aiis4'
-        title={`АИИС 4: ${project.name}`}
+        title={
+          <>
+            АИИС 4:
+            <AiisProjectSwitcher
+              currentProjectId={project.id}
+              projects={projects.map(({ id, name }) => ({ id, name }))}
+            />
+          </>
+        }
         meta={`строк: ${tis.length}`}
       />
       <main className='mx-auto flex min-h-0 w-full flex-1 flex-col gap-1 p-2 sm:p-4'>
