@@ -58,6 +58,7 @@ export type SurveyTi = {
 /// Колонки таблицы опроса: раскладка файла опроса тех. решений — то, что
 /// смотрят на выезде, а не все поля ТИ подряд, как в tiColumns.
 export const surveyTiColumns: SurveyColumn[] = [
+  { title: '', minWidth: 24 },
   { title: '№ТИ на ОС', minWidth: 80 },
   { title: 'наименование ТИ', minWidth: 280 },
   { title: 'Uном, кВ', minWidth: 80 },
@@ -150,9 +151,7 @@ export function parseYesNo(value: string): boolean | null | undefined {
 /// назвали — вид модема группы не трогаем. undefined — текст не разобрать.
 export function parsePolling(
   value: string,
-):
-  | { isPolled: boolean | null; modemKind?: DbModemKind }
-  | undefined {
+): { isPolled: boolean | null; modemKind?: DbModemKind } | undefined {
   const isPolled = parseYesNo(value);
 
   if (isPolled === undefined) return undefined;
@@ -245,6 +244,7 @@ export function surveyTiCells(
     const modem = ti.group?.modem;
 
     return [
+      text(''),
       text(ti.number),
       text(ti.name),
       text(ti.uNom ? voltageClassLabels[ti.uNom] : ''),
