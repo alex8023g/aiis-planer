@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, Merge, Pencil, Plug, Plus, Split } from 'lucide-react';
+import { Check, Merge, Pencil, Plug, Plus, Split, Trash2 } from 'lucide-react';
 import {
   useMemo,
   useOptimistic,
@@ -42,6 +42,7 @@ import { cn } from '@/lib/utils';
 import {
   addTis,
   connectMeter,
+  deleteTi,
   pingTi,
   type PingResult,
   mergeTiGroups,
@@ -854,6 +855,26 @@ export function SurveyView({
     });
   }
 
+  /// Удалить ТИ выделенной строки. Удаление не отменить — спрашиваем.
+  function handleDelete() {
+    const ti = selectedRow === null ? undefined : optimisticTis[selectedRow];
+
+    if (!ti) return;
+
+    const label = [ti.number, ti.name].filter(Boolean).join(' ');
+
+    if (!window.confirm(`Удалить ТИ «${label}»? Это нельзя отменить.`)) return;
+
+    setError(null);
+    startTransition(async () => {
+      const result = await deleteTi(projectId, ti.id);
+
+      if (!result.ok) return setError(result.error);
+
+      setSelectedRow(null);
+    });
+  }
+
   function handleAdd() {
     setError(null);
     startTransition(async () => {
@@ -924,6 +945,20 @@ export function SurveyView({
             </Button>
           </>
         )}
+        {/* Удалить ТИ можно, когда выделена строка (кликом в первую колонку). */}
+        {editable &&
+          selectedRow !== null &&
+          optimisticTis[selectedRow] !== undefined && (
+            <Button
+              variant='outline'
+              onClick={handleDelete}
+              disabled={isPending}
+              className='text-destructive'
+            >
+              <Trash2 />
+              Удалить ТИ
+            </Button>
+          )}
         {/* Объединить решения можно, когда в «тех. решении» выделено две
             ячейки и больше: одну объединять не с чем. */}
         {editable &&
