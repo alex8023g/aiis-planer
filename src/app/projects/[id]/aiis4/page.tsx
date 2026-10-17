@@ -38,13 +38,11 @@ export default async function Aiis4Page({
         user={user}
         current='aiis4'
         title={
-          <>
-            АИИС 4:
-            <AiisProjectSwitcher
-              currentProjectId={project.id}
-              projects={projects.map(({ id, name }) => ({ id, name }))}
-            />
-          </>
+          <AiisProjectSwitcher
+            currentProjectId={project.id}
+            section='aiis4'
+            projects={projects.map(({ id, name }) => ({ id, name }))}
+          />
         }
         meta={`строк: ${tis.length}`}
       />

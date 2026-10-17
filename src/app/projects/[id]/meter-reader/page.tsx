@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation';
 
+import { AiisProjectSwitcher } from '@/components/AiisProjectSwitcher';
 import { Header } from '@/components/Header';
-import { getProject } from '@/lib/projects';
+import { getProject, getProjects } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import { getMeterReaderTis } from '@/lib/tis';
 
@@ -24,14 +25,23 @@ export default async function MeterReaderPage({
   /// проект, и «нет проекта» с «нет доступа» отвечают одинаково.
   if (!project) notFound();
 
-  const tis = await getMeterReaderTis(id);
+  const [projects, tis] = await Promise.all([
+    getProjects(user),
+    getMeterReaderTis(id),
+  ]);
 
   return (
     <div className='min-h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100'>
       <Header
         user={user}
         current='meterreader'
-        title={`MeterReader: ${project.name}`}
+        title={
+          <AiisProjectSwitcher
+            currentProjectId={project.id}
+            projects={projects.map(({ id, name }) => ({ id, name }))}
+            section='meter-reader'
+          />
+        }
         meta={`ТИ: ${tis.length}`}
       />
       <main className='mx-auto p-6 sm:p-10'>
