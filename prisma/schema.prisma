@@ -315,6 +315,14 @@ model Verification {
   @@map("verification")
 }
 
+/// Состояние работы по ТИ.
+enum TiStatus {
+  in_progress
+  done
+  /// Что-то мешает: нужно внимание.
+  warning
+}
+
 /// Сейчас на ТИ стоит (current) или ставим взамен (new). Общий для счётчика и
 /// модема: у обоих на ТИ бывает не больше одного каждого вида.
 enum EquipmentState {
@@ -392,6 +400,10 @@ model Ti {
   group      TiGroup?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
   /// Порядок в таблице опроса: задаёт составитель.
   position   Int
+  /// Заметки к самой ТИ — в отличие от примечания группы, общего для всех её
+  /// ТИ.
+  notes      String?
+  status     TiStatus      @default(in_progress)
   /// Не больше двух: текущий и новый (см. @@unique в Meter).
   meters     Meter[]
   // ttId          String

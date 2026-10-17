@@ -1,6 +1,15 @@
 'use client';
 
-import { Check, Merge, Pencil, Plug, Plus, Split } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  Merge,
+  Pencil,
+  Plug,
+  Plus,
+  Split,
+  Trash2,
+} from 'lucide-react';
 import {
   useMemo,
   useOptimistic,
@@ -19,6 +28,12 @@ import {
 import { CellEditor } from '@/components/CellEditor';
 import { SurveyTable, type SurveyCellProps } from '@/components/SurveyTable';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { copyText, parseClipboard } from '@/lib/clipboard';
 import { emptyRow, voltageClassLabels, yesNo } from '@/lib/survey-cells';
@@ -26,6 +41,7 @@ import {
   invalidValueError,
   needsReplacement,
   parsePolling,
+  parseTiStatus,
   parseVoltageClass,
   parseWiringScheme,
   parseYesNo,
@@ -33,15 +49,18 @@ import {
   pollingText,
   surveyTiCells,
   surveyTiColumns,
+  tiStatusLabels,
   wiringLabels,
   type SurveyTi,
 } from '@/lib/survey-ti';
 import type { ModemKind } from '@/generated/prisma/enums';
+import { TiStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 import {
   addTis,
   connectMeter,
+  deleteTis,
   pingTi,
   type PingResult,
   mergeTiGroups,
@@ -52,34 +71,45 @@ import { useCellSelection } from './useCellSelection';
 /// Колонки, где в режиме правки можно выделять ячейки (индексы в
 /// surveyTiColumns): правимые (EDITABLE_COLUMNS) и «опрос». Выделение одно на таблицу — клик в другой колонке
 /// переносит его туда. В режиме просмотра клик выделяет строку целиком.
-const SELECTABLE_COLUMNS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+const SELECTABLE_COLUMNS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 /// Колонка «тех. решение» в surveyTiColumns.
-const SOLUTION_COLUMN = 9;
+const SOLUTION_COLUMN = 10;
 /// Колонка «IP» в surveyTiColumns.
-const IP_COLUMN = 12;
+const IP_COLUMN = 13;
 /// Колонка «подключён» в surveyTiColumns.
-const CONNECTED_COLUMN = 14;
+const CONNECTED_COLUMN = 15;
+/// Колонка «статус» в surveyTiColumns.
+const STATUS_COLUMN = 3;
+
+/// Статус ТИ в таблице — точкой: серая — в работе, зелёная — готово,
+/// оранжевая — внимание.
+const tiStatusDotColors: Record<TiStatus, string> = {
+  [TiStatus.InProgress]: 'bg-neutral-400 dark:bg-neutral-500',
+  [TiStatus.Done]: 'bg-green-500',
+  [TiStatus.Warning]: 'bg-orange-500',
+};
 
 /// Итог проверки для точки в ячейке: зелёная — ок, красная — нет. error —
 /// почему нет, во всплывающей подсказке.
 type CheckStatus = { ok: boolean; error?: string };
 /// Колонки, что правятся в режиме правки, и поле под каждой. Тех. решение
 /// и IP — общие на группу (ячейка объединена на группу), остальное — своё у
-/// каждой ТИ. Uном, схема, «требуется замена», «опрашивается» и RS-485 —
+/// каждой ТИ. Статус, Uном, схема, «требуется замена», «опрашивается» и RS-485 —
 /// перечисления и да/нет: текст ячейки разбирают parse* из survey-ti.
 const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
   1: 'number',
   2: 'name',
-  3: 'uNom',
-  4: 'meterType',
-  5: 'wiring',
-  6: 'needsReplacement',
-  7: 'isPolled',
-  8: 'freeRs485',
-  9: 'technicalSolution',
-  10: 'proposedMeterType',
-  12: 'ip',
-  13: 'connectAddress',
+  3: 'status',
+  4: 'uNom',
+  5: 'meterType',
+  6: 'wiring',
+  7: 'needsReplacement',
+  8: 'isPolled',
+  9: 'freeRs485',
+  10: 'technicalSolution',
+  11: 'proposedMeterType',
+  13: 'ip',
+  14: 'connectAddress',
 };
 
 /// Значение правимой ячейки так, как его показывает таблица.
@@ -91,6 +121,8 @@ function fieldValue(ti: SurveyTi | undefined, col: number): string {
       return ti.number;
     case 'name':
       return ti.name;
+    case 'status':
+      return tiStatusLabels[ti.status];
     case 'uNom':
       return ti.uNom ? voltageClassLabels[ti.uNom] : '';
     case 'meterType':
@@ -192,6 +224,12 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
         if (uNom !== undefined) patchTi(ti, { uNom });
         break;
       }
+      case 'status': {
+        const status = parseTiStatus(value);
+
+        if (status !== undefined) patchTi(ti, { status });
+        break;
+      }
       case 'wiring': {
         const wiring = parseWiringScheme(value);
 
@@ -258,6 +296,7 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
 /// Постоянная ссылка на пустой список: новый [] на каждой перерисовке
 /// пересчитывал бы границы ячеек в useCellSelection.
 const NO_ROWS: never[] = [];
+const NO_ROW_SELECTION = { rows: new Set<number>(), active: null };
 
 /// Панель управления и таблица опроса. Клиентская ради состояния editable:
 /// кнопка в панели переключает таблицу между просмотром и правкой.
@@ -291,9 +330,18 @@ export function SurveyView({
     col: number;
     initial: string;
   } | null>(null);
-  /// Выделенная строка в режиме просмотра — ТИ целиком. В режиме правки
-  /// вместо неё выделение ячеек (useCellSelection).
-  const [selectedRow, setSelectedRow] = useState<number | null>(null);
+  /// Выделенные строки — ТИ целиком; с Ctrl (⌘) кликом выделяют несколько.
+  /// active — последняя выбранная: от неё ходят стрелками. В режиме правки
+  /// строки выделяют кликом в первую колонку (для удаления), а в остальных —
+  /// ячейки (useCellSelection).
+  const [rowSelection, setRowSelection] = useState<{
+    rows: ReadonlySet<number>;
+    active: number | null;
+  }>(NO_ROW_SELECTION);
+  const selectedRows = useMemo(
+    () => [...rowSelection.rows].sort((first, second) => first - second),
+    [rowSelection],
+  );
   /// Опрос счётчика кнопкой Connect: идёт ли сейчас. Итог — в колонке
   /// «подключён».
   const [isConnecting, startConnectTransition] = useTransition();
@@ -548,33 +596,42 @@ export function SurveyView({
   /// Перейти к строке: выделить и прокрутить к ней. У первой, пустой колонки
   /// всегда есть ячейка, поэтому она остаётся надёжным ориентиром.
   function goToRow(row: number) {
-    setSelectedRow(row);
+    selectRow(row);
     document
       .querySelector(`[data-row-cell="${row}:0"]`)
       ?.scrollIntoView({ block: 'nearest' });
   }
 
+  /// Выделить одну строку — или снять выделение, если null.
+  function selectRow(row: number | null) {
+    setRowSelection(
+      row === null ? NO_ROW_SELECTION : { rows: new Set([row]), active: row },
+    );
+  }
+
   /// Клавиши в режиме просмотра: стрелки — соседняя строка, Ctrl+C —
-  /// скопировать строку, Escape — снять выделение.
+  /// скопировать выделенные строки, Escape — снять выделение.
   function handleRowKeyDown(event: KeyboardEvent<HTMLTableCellElement>) {
-    if (selectedRow === null) return;
+    const active = rowSelection.active;
+
+    if (active === null) return;
 
     if (event.key === 'Escape') {
-      setSelectedRow(null);
+      selectRow(null);
       return;
     }
 
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
       event.preventDefault();
-      void copyText(rowText(selectedRow));
+      void copyText(selectedRows.map(rowText).join('\n'));
       return;
     }
 
     const next =
       event.key === 'ArrowDown'
-        ? Math.min(selectedRow + 1, rows.length - 1)
+        ? Math.min(active + 1, rows.length - 1)
         : event.key === 'ArrowUp'
-          ? Math.max(selectedRow - 1, 0)
+          ? Math.max(active - 1, 0)
           : null;
 
     if (next === null) return;
@@ -593,18 +650,46 @@ export function SurveyView({
     /// Пустая таблица — одна строка-заглушка, выделять в ней нечего.
     if (optimisticTis.length === 0) return undefined;
 
-    const covers = row === selectedRow && (rows[row][col]?.rowSpan ?? 1) === 1;
+    const covers =
+      rowSelection.rows.has(row) && (rows[row][col]?.rowSpan ?? 1) === 1;
 
     return {
       'data-row-cell': `${row}:${col}`,
       /// Фокус нужен ради клавиш, но табом по каждой ячейке не ходим.
       tabIndex: -1,
       'aria-selected': covers,
-      /// Клик по уже выделенной строке снимает выделение.
+      /// Клик выделяет одну строку, клик по единственной выделенной снимает
+      /// выделение. С Ctrl (⌘) клик добавляет строку к выделению или убирает
+      /// её оттуда.
       onMouseDown: (event: MouseEvent<HTMLTableCellElement>) => {
         const clicked = rowAt(event, row);
 
-        setSelectedRow((current) => (current === clicked ? null : clicked));
+        if (event.ctrlKey || event.metaKey) {
+          /// Иначе браузер выделил бы ячейку таблицы (Firefox) или текст;
+          /// фокус ради клавиш ставим сами.
+          event.preventDefault();
+          event.currentTarget.focus();
+          setRowSelection(({ rows: current }) => {
+            const next = new Set(current);
+
+            if (next.has(clicked)) next.delete(clicked);
+            else next.add(clicked);
+
+            return next.size === 0
+              ? NO_ROW_SELECTION
+              : {
+                  rows: next,
+                  active: next.has(clicked) ? clicked : Math.max(...next),
+                };
+          });
+          return;
+        }
+
+        setRowSelection(({ rows: current }) =>
+          current.size === 1 && current.has(clicked)
+            ? NO_ROW_SELECTION
+            : { rows: new Set([clicked]), active: clicked },
+        );
       },
       onKeyDown: handleRowKeyDown,
       className: cn(
@@ -642,6 +727,30 @@ export function SurveyView({
   /// разметке. Поле правки точку не получает.
   function cellProps(row: number, col: number): SurveyCellProps | undefined {
     const props = modeCellProps(row, col);
+    const ti = optimisticTis[row];
+
+    /// Статус — точкой вместо текста. Текст остаётся значением ячейки: его
+    /// копируют, вставляют и правят, а подпись видна в подсказке.
+    if (col === STATUS_COLUMN && ti && !props?.children) {
+      const label = tiStatusLabels[ti.status];
+
+      return {
+        ...props,
+        title: label,
+        className: cn(props?.className, 'text-center'),
+        children: (
+          <span
+            role='img'
+            aria-label={label}
+            className={cn(
+              'inline-block size-2.5 rounded-full align-middle',
+              tiStatusDotColors[ti.status],
+            )}
+          />
+        ),
+      };
+    }
+
     const status = checkStatus(row, col);
 
     if (!status || props?.children) return props;
@@ -691,12 +800,12 @@ export function SurveyView({
     if (!props) return props;
 
     const rowSelected =
-      row === selectedRow && (rows[row][col]?.rowSpan ?? 1) === 1;
+      rowSelection.rows.has(row) && (rows[row][col]?.rowSpan ?? 1) === 1;
     const cellProps: SurveyCellProps = {
       ...props,
       'aria-selected': rowSelected || props['aria-selected'],
       onMouseDown: (event: MouseEvent<HTMLTableCellElement>) => {
-        setSelectedRow(null);
+        selectRow(null);
         props.onMouseDown?.(event);
       },
       className: cn(
@@ -787,15 +896,15 @@ export function SurveyView({
     });
   }
 
-  /// Опросить счётчики: выделенной ТИ или, без выделения, всех. По одному:
+  /// Опросить счётчики: выделенных ТИ или, без выделения, всех. По одному:
   /// экшены Next.js из браузера всё равно идут очередью, а ТИ одной группы
   /// сидят на одном модеме и разом их не опросить. Итог каждой ТИ виден в
   /// колонке «подключён», как только он есть.
   function handleConnect() {
     const targets =
-      selectedRow === null
+      selectedRows.length === 0
         ? optimisticTis
-        : optimisticTis.slice(selectedRow, selectedRow + 1);
+        : selectedRows.flatMap((row) => optimisticTis[row] ?? []);
 
     if (targets.length === 0) return;
 
@@ -854,6 +963,46 @@ export function SurveyView({
     });
   }
 
+  /// Удалить ТИ выделенной строки. Удаление не отменить — спрашиваем.
+  function handleDelete() {
+    const tis = selectedRows.flatMap((row) => optimisticTis[row] ?? []);
+
+    if (tis.length === 0) return;
+
+    const question =
+      tis.length === 1
+        ? `Удалить ТИ «${[tis[0].number, tis[0].name].filter(Boolean).join(' ')}»?`
+        : `Удалить выделенные ТИ (${tis.length})?`;
+
+    if (!window.confirm(`${question} Это нельзя отменить.`)) return;
+
+    setError(null);
+    startTransition(async () => {
+      const result = await deleteTis(
+        projectId,
+        tis.map((ti) => ti.id),
+      );
+
+      if (!result.ok) return setError(result.error);
+
+      selectRow(null);
+    });
+  }
+
+  /// Поставить статус всем выделенным ТИ — теми же правками, что и вставка
+  /// в колонку «статус»: одна транзакция и сразу видно в таблице.
+  function handleSetStatus(status: TiStatus) {
+    save(
+      selectedRows.flatMap((row) => {
+        const ti = optimisticTis[row];
+
+        return ti
+          ? [{ tiId: ti.id, field: 'status', value: tiStatusLabels[status] }]
+          : [];
+      }),
+    );
+  }
+
   function handleAdd() {
     setError(null);
     startTransition(async () => {
@@ -874,7 +1023,7 @@ export function SurveyView({
               /// Режимы выделяют по-разному: при переключении старое выделение
               /// снимаем. Открытое поле правки закрываем без сохранения.
               setEditing(null);
-              setSelectedRow(null);
+              selectRow(null);
               selection.clear();
               setEditable((value) => !value);
             }}
@@ -896,9 +1045,11 @@ export function SurveyView({
               ? connectProgress
                 ? `Connecting ${connectProgress.done}/${connectProgress.total}…`
                 : 'Connecting…'
-              : selectedRow === null
+              : selectedRows.length === 0
                 ? 'Connect all'
-                : 'Connect'}
+                : selectedRows.length === 1
+                  ? 'Connect'
+                  : `Connect ${selectedRows.length}`}
           </Button>
         )}
         {/* Добавление ТИ — только в режиме правки. Новые ТИ встают в конец
@@ -924,6 +1075,53 @@ export function SurveyView({
             </Button>
           </>
         )}
+        {/* Статус выделенных ТИ — разом, без правки каждой ячейки. */}
+        {editable &&
+          selectedRows.some((row) => optimisticTis[row] !== undefined) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant='outline'>
+                    Статус
+                    <ChevronDown />
+                  </Button>
+                }
+              />
+              <DropdownMenuContent>
+                {Object.values(TiStatus).map((status) => (
+                  <DropdownMenuItem
+                    key={status}
+                    onClick={() => handleSetStatus(status)}
+                  >
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'size-2.5 rounded-full',
+                        tiStatusDotColors[status],
+                      )}
+                    />
+                    {tiStatusLabels[status]}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        {/* Удалить ТИ можно, когда выделены строки (кликом в первую колонку,
+            с Ctrl — несколько). */}
+        {editable &&
+          selectedRows.some((row) => optimisticTis[row] !== undefined) && (
+            <Button
+              variant='outline'
+              onClick={handleDelete}
+              disabled={isPending}
+              className='text-destructive'
+            >
+              <Trash2 />
+              {selectedRows.length > 1
+                ? `Удалить ТИ (${selectedRows.length})`
+                : 'Удалить ТИ'}
+            </Button>
+          )}
         {/* Объединить решения можно, когда в «тех. решении» выделено две
             ячейки и больше: одну объединять не с чем. */}
         {editable &&

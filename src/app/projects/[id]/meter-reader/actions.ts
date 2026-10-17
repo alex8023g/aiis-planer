@@ -9,6 +9,7 @@ import { requireUser } from '@/lib/session';
 import {
   invalidValueError,
   parsePolling,
+  parseTiStatus,
   parseVoltageClass,
   parseWiringScheme,
   parseYesNo,
@@ -25,6 +26,7 @@ import {
 export type MeterReaderField =
   | 'number'
   | 'name'
+  | 'status'
   | 'ip'
   | 'port'
   | 'connectAddress'
@@ -46,6 +48,7 @@ export type MeterReaderEdit = {
 const FIELDS = new Set<string>([
   'number',
   'name',
+  'status',
   'ip',
   'port',
   'connectAddress',
@@ -196,6 +199,10 @@ export async function updateMeterReaderCells(
         const uNom = parseVoltageClass(value)!;
 
         await tx.ti.update({ where: { id: tiId }, data: { uNom } });
+      } else if (field === 'status') {
+        const status = parseTiStatus(value)!;
+
+        await tx.ti.update({ where: { id: tiId }, data: { status } });
       } else if (field === 'wiring') {
         const wiring = parseWiringScheme(value)!;
 

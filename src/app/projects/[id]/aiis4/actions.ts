@@ -307,6 +307,52 @@ export async function splitTiGroup(
   return { ok: true };
 }
 
+/// Удалить ТИ со всем её оборудованием (счётчики, ТТ, ТН, подключение уходят
+/// каскадом). Группа, от которой не осталось ни одной ТИ, удаляется вместе со
+/// всем общим: иначе она висела бы пустой до удаления проекта.
+export async function deleteTis(
+  projectId: string,
+  tiIds: string[],
+): Promise<ActionResult> {
+  const allowed = await requireProjectEditor(projectId);
+  if (!allowed.ok) return allowed;
+
+  const ids = [...new Set(tiIds)];
+
+  if (ids.length === 0) return { ok: true };
+
+  /// Одной транзакцией: удаляются либо все выделенные ТИ, либо ни одной, и
+  /// при сбое группа не останется без ТИ.
+  const error = await prisma.$transaction(async (tx) => {
+    const tis = await tx.ti.findMany({
+      where: { id: { in: ids }, projectId },
+      select: { groupId: true },
+    });
+
+    /// Чужая или уже удалённая ТИ: страница могла устареть.
+    if (tis.length !== ids.length) return 'ТИ не найдена — обновите страницу';
+
+    await tx.ti.deleteMany({ where: { id: { in: ids } } });
+
+    /// Группы, от которых не осталось ни одной ТИ.
+    const groupIds = [...new Set(tis.flatMap(({ groupId }) => groupId ?? []))];
+
+    if (groupIds.length > 0) {
+      await tx.tiGroup.deleteMany({
+        where: { id: { in: groupIds }, projectId, tis: { none: {} } },
+      });
+    }
+
+    return null;
+  });
+
+  if (error) return { ok: false, error };
+
+  refresh();
+
+  return { ok: true };
+}
+
 const execFileAsync = promisify(execFile);
 
 /// Сколько ждать ответа на ping, секунд.

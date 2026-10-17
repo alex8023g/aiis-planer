@@ -10,6 +10,7 @@ import type {
 } from '@/app/projects/[id]/aiis2/survey-data';
 import type {
   ModemKind as DbModemKind,
+  TiStatus as DbTiStatus,
   VoltageClass as DbVoltageClass,
   WiringScheme as DbWiringScheme,
 } from '@/generated/prisma/enums';
@@ -20,7 +21,7 @@ import {
   voltageClassLabels,
   yesNo,
 } from '@/lib/survey-cells';
-import { ModemKind, VoltageClass, WiringScheme } from '@/lib/types';
+import { ModemKind, TiStatus, VoltageClass, WiringScheme } from '@/lib/types';
 
 /// Строка таблицы опроса. Типы перечислений — из Prisma: ровно то, что отдаёт
 /// запрос (см. getSurveyTis в src/lib/tis.ts), без пересборки.
@@ -29,6 +30,7 @@ export type SurveyTi = {
   id: string;
   number: string;
   name: string;
+  status: DbTiStatus;
   uNom: DbVoltageClass | null;
   wiring: DbWiringScheme | null;
   isPolled: boolean | null;
@@ -59,8 +61,9 @@ export type SurveyTi = {
 /// смотрят на выезде, а не все поля ТИ подряд, как в tiColumns.
 export const surveyTiColumns: SurveyColumn[] = [
   { title: '', minWidth: 24 },
-  { title: '№ТИ на ОС', minWidth: 80 },
+  { title: '№ТИ на ОС', minWidth: 48, compact: true },
   { title: 'наименование ТИ', minWidth: 280 },
+  { title: 'статус', minWidth: 48, compact: true, resizable: false },
   { title: 'Uном, кВ', minWidth: 80 },
   { title: 'тип ПУ', minWidth: 160 },
   { title: 'схема включения', minWidth: 100 },
@@ -81,6 +84,24 @@ export const wiringLabels: Record<WiringScheme, string> = {
   [WiringScheme.SemiIndirect]: 'полукос.',
   [WiringScheme.Indirect]: 'косв.',
 };
+
+export const tiStatusLabels: Record<TiStatus, string> = {
+  [TiStatus.InProgress]: 'в работе',
+  [TiStatus.Done]: 'готово',
+  [TiStatus.Warning]: 'внимание',
+};
+
+/// Статус из текста ячейки — по началу подписи: «в раб», «гот», «вним».
+/// Статус обязателен, поэтому пустая ячейка тоже undefined — не статус.
+export function parseTiStatus(value: string): DbTiStatus | undefined {
+  const normalized = value.trim().toLowerCase();
+
+  if (normalized === '') return undefined;
+
+  return (Object.keys(tiStatusLabels) as TiStatus[]).find((status) =>
+    tiStatusLabels[status].startsWith(normalized),
+  );
+}
 
 /// Uном из текста ячейки: «0,4», «0.4», «0,4 кВ» — всё 0,4 кВ. null —
 /// пустая ячейка («не выяснили»), undefined — такого класса напряжения нет.
@@ -181,6 +202,10 @@ export function invalidValueError(field: string, value: string): string | null {
       return parseVoltageClass(value) === undefined
         ? `${shown} — не класс напряжения`
         : null;
+    case 'status':
+      return parseTiStatus(value) === undefined
+        ? `${shown} — не статус (в работе, готово, внимание)`
+        : null;
     case 'wiring':
       return parseWiringScheme(value) === undefined
         ? `${shown} — не схема включения (прям., полукос., косв.)`
@@ -247,6 +272,7 @@ export function surveyTiCells(
       text(''),
       text(ti.number),
       text(ti.name),
+      text(tiStatusLabels[ti.status]),
       text(ti.uNom ? voltageClassLabels[ti.uNom] : ''),
       text(ti.currentMeter?.type),
       text(ti.wiring ? wiringLabels[ti.wiring] : ''),
