@@ -1,4 +1,4 @@
-import { LayoutList, Users } from 'lucide-react';
+import { House, LayoutList, Users } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -52,22 +52,51 @@ export function Header({
   /// активную вкладку договоров.
   action?: ReactNode;
 }) {
+  const projectsNearHome =
+    current === 'project' || current === 'aiis4' || current === 'meterreader';
+
   return (
     <header className='sticky top-0 z-10 border-b border-neutral-200 bg-neutral-50/80 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80'>
       <div className='mx-auto flex items-center justify-between gap-4 px-6 py-3 sm:px-10'>
-        <div className='flex items-baseline gap-3'>
-          <h1 className='text-xl font-semibold tracking-tight'>
-            {title ?? pageTitles[current]}
-          </h1>
-          {meta && (
-            <span className='text-md whitespace-nowrap text-neutral-500 dark:text-neutral-400'>
-              {meta}
-            </span>
+        <div className='flex items-center gap-2'>
+          {/* Главная и вход шапку не используют, так что ссылка на главную
+              нужна на каждой странице, где шапка есть. */}
+          <Link
+            href='/'
+            aria-label='Главная'
+            title='Главная'
+            className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
+          >
+            <House />
+          </Link>
+          {/* Со страницы проекта и её разделов чаще всего возвращаются к списку
+              проектов — ссылка на него рядом с главной, а не среди кнопок
+              справа. */}
+          {projectsNearHome && (
+            <Link
+              href='/projects'
+              aria-label='Графики проектов'
+              title='Графики проектов'
+              className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
+            >
+              <LayoutList />
+            </Link>
           )}
+          <div className='flex items-baseline gap-3'>
+            <h1 className='text-xl font-semibold tracking-tight'>
+              {title ?? pageTitles[current]}
+            </h1>
+            {meta && (
+              <span className='text-md whitespace-nowrap text-neutral-500 dark:text-neutral-400'>
+                {meta}
+              </span>
+            )}
+          </div>
         </div>
         <div className='flex items-center gap-2'>
           {action}
-          {current !== 'projects' && (
+          {/* Где ссылка на список уже стоит слева, справа она не нужна. */}
+          {current !== 'projects' && !projectsNearHome && (
             <Link href='/projects' className={navLink}>
               <LayoutList />
               Проекты
