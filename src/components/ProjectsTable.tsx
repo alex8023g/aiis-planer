@@ -117,11 +117,14 @@ export function ProjectsTable({
 
   return (
     /// relative — чтобы sr-only в шапке не растягивал страницу вширь через
-    /// overflow-x-auto (как в таблице договоров).
-    <div className='relative overflow-x-auto rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900'>
+    /// overflow-auto (как в таблице договоров). Прокрутка — у самой таблицы,
+    /// не выше max-h-full: иначе sticky-шапке не за что зацепиться.
+    <div className='/rounded-xl /border /border-neutral-200 /shadow-sm /dark:border-neutral-800 relative max-h-full overflow-auto bg-white dark:bg-neutral-900'>
       <table className='w-full text-left text-sm'>
-        <thead className='text-xs text-neutral-500 dark:text-neutral-400'>
-          <tr className='border-b border-neutral-200 dark:border-neutral-800'>
+        {/* Граница строки при border-collapse уезжает вместе с телом
+            таблицы — у прилипшей шапки черта снизу сделана тенью. */}
+        <thead className='sticky top-0 z-10 bg-white text-xs text-neutral-500 shadow-[0_1px_0_var(--color-neutral-200)] dark:bg-neutral-900 dark:text-neutral-400 dark:shadow-[0_1px_0_var(--color-neutral-800)]'>
+          <tr className='/border-b /border-neutral-200 /dark:border-neutral-800'>
             <SortHeader column='name' sort={sort}>
               Проект
             </SortHeader>

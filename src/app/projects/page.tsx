@@ -40,7 +40,7 @@ export default async function AiisProjectsPage({
   /// на деле ему просто ещё не выдали роль.
   const waiting = user.role === UserRole.Pending;
   return (
-    <div className='min-h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100'>
+    <div className='flex h-screen flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100'>
       <Header
         user={user}
         current='projects'
@@ -79,7 +79,7 @@ export default async function AiisProjectsPage({
           )
         }
       />
-      <main className='/max-w-4xl mx-auto p-6 sm:p-10'>
+      <main className='mx-auto min-h-0 w-full flex-1 overflow-auto'>
         {waiting ? (
           <p className='text-sm text-neutral-500 dark:text-neutral-400'>
             Доступ пока не подтверждён. Попросите администратора выдать вам роль
