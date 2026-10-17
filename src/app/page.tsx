@@ -92,7 +92,7 @@ export default async function HomePage() {
         ) : (
           <nav className='mt-8 grid gap-4 sm:grid-cols-2'>
             <SectionLink
-              href='/projects'
+              href='/projects?view=short&sort=name'
               icon={LayoutList}
               title='Проекты АИИС'
               description='Этапы, сроки и статусы по каждому проекту'

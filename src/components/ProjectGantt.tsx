@@ -113,25 +113,10 @@ function subtaskEndOffset(
   return stageOffset + (index + 1) * share;
 }
 
-export function ProjectGantt({
-  project,
-  daysOff,
-  canEdit,
-  href,
-  deleteRedirect,
-}: {
-  project: Project;
-  /// Куда ведёт название проекта. На самой странице проекта ссылки нет —
-  /// вести ей оттуда некуда.
-  href?: string;
-  /// Куда уйти после удаления проекта (см. ProjectMenu). В списке не нужно:
-  /// карточка просто исчезает.
-  deleteRedirect?: string;
-  /// Может ли текущий пользователь менять проект (см. canEdit в lib/session.ts).
-  canEdit: boolean;
-  /// Календарь выходных текущего года из isdayoff.ru (см. lib/dayoff.ts).
-  daysOff: string;
-}) {
+/// Расчёт графика проекта: где стоит каждый этап, сколько дней прошло и
+/// осталось, когда конец и насколько всё готово. Общий для карточки проекта
+/// (ProjectGantt) и строки краткого списка (ProjectsTable).
+export function projectSchedule(project: Project, daysOff: string) {
   // Widen the per-stage literal types to the common Stage shape so the
   // scheduling code below can treat every stage uniformly.
   const stageEntries: [string, Stage | null | undefined][] = Object.entries(
@@ -190,6 +175,48 @@ export function ProjectGantt({
   const totalWork = rows.reduce((sum, r) => sum + r.stage.duration, 0);
   const totalProgress =
     rows.reduce((sum, r) => sum + r.progress * r.stage.duration, 0) / totalWork;
+
+  return {
+    rows,
+    /// Только для показа: доли дня копятся от подзадач (subtaskEndOffset), и
+    /// без округления выходит 90.71428571428572.
+    totalDuration: Math.round(totalDuration * 100) / 100,
+    totalWork,
+    totalProgress,
+    passedDays,
+    dateFinish,
+    daysLeft,
+  };
+}
+
+export function ProjectGantt({
+  project,
+  daysOff,
+  canEdit,
+  href,
+  deleteRedirect,
+}: {
+  project: Project;
+  /// Куда ведёт название проекта. На самой странице проекта ссылки нет —
+  /// вести ей оттуда некуда.
+  href?: string;
+  /// Куда уйти после удаления проекта (см. ProjectMenu). В списке не нужно:
+  /// карточка просто исчезает.
+  deleteRedirect?: string;
+  /// Может ли текущий пользователь менять проект (см. canEdit в lib/session.ts).
+  canEdit: boolean;
+  /// Календарь выходных текущего года из isdayoff.ru (см. lib/dayoff.ts).
+  daysOff: string;
+}) {
+  const {
+    rows,
+    totalDuration,
+    totalWork,
+    totalProgress,
+    passedDays,
+    dateFinish,
+    daysLeft,
+  } = projectSchedule(project, daysOff);
 
   return (
     <section className='rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6 dark:border-neutral-800 dark:bg-neutral-900'>
