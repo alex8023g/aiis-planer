@@ -153,9 +153,11 @@ export function SurveyTable({
               <ResizableHeaderCell
                 key={index}
                 minWidth={column.minWidth}
+                resizable={column.resizable}
                 style={sticky ? stickyStyle(columns, index) : undefined}
                 className={cn(
                   'bg-white px-4 py-3 align-bottom font-medium dark:bg-neutral-900',
+                  column.compact && 'px-2',
                   sticky && stickyClass(index, stickyColumns),
                 )}
               >
@@ -209,6 +211,7 @@ export function SurveyTable({
                     /// разделены варианты решения.
                     className={cn(
                       'px-4 py-2 whitespace-pre-line',
+                      columns[columnIndex]?.compact && 'px-2',
                       (cell.align ?? verticalAlign) === 'middle'
                         ? 'align-middle'
                         : 'align-top',

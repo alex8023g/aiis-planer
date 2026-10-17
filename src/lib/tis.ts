@@ -299,6 +299,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
       id: true,
       number: true,
       name: true,
+      status: true,
       uNom: true,
       wiring: true,
       isPolled: true,

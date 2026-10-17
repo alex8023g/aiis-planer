@@ -310,28 +310,36 @@ export async function splitTiGroup(
 /// Удалить ТИ со всем её оборудованием (счётчики, ТТ, ТН, подключение уходят
 /// каскадом). Группа, от которой не осталось ни одной ТИ, удаляется вместе со
 /// всем общим: иначе она висела бы пустой до удаления проекта.
-export async function deleteTi(
+export async function deleteTis(
   projectId: string,
-  tiId: string,
+  tiIds: string[],
 ): Promise<ActionResult> {
   const allowed = await requireProjectEditor(projectId);
   if (!allowed.ok) return allowed;
 
-  /// Одной транзакцией: при сбое группа осталась бы без ТИ.
+  const ids = [...new Set(tiIds)];
+
+  if (ids.length === 0) return { ok: true };
+
+  /// Одной транзакцией: удаляются либо все выделенные ТИ, либо ни одной, и
+  /// при сбое группа не останется без ТИ.
   const error = await prisma.$transaction(async (tx) => {
-    const ti = await tx.ti.findFirst({
-      where: { id: tiId, projectId },
+    const tis = await tx.ti.findMany({
+      where: { id: { in: ids }, projectId },
       select: { groupId: true },
     });
 
     /// Чужая или уже удалённая ТИ: страница могла устареть.
-    if (!ti) return 'ТИ не найдена — обновите страницу';
+    if (tis.length !== ids.length) return 'ТИ не найдена — обновите страницу';
 
-    await tx.ti.delete({ where: { id: tiId } });
+    await tx.ti.deleteMany({ where: { id: { in: ids } } });
 
-    if (ti.groupId) {
+    /// Группы, от которых не осталось ни одной ТИ.
+    const groupIds = [...new Set(tis.flatMap(({ groupId }) => groupId ?? []))];
+
+    if (groupIds.length > 0) {
       await tx.tiGroup.deleteMany({
-        where: { id: ti.groupId, projectId, tis: { none: {} } },
+        where: { id: { in: groupIds }, projectId, tis: { none: {} } },
       });
     }
 

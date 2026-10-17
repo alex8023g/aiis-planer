@@ -67,6 +67,14 @@ export enum WiringScheme {
   Indirect = 'indirect',
 }
 
+/// Состояние работы по ТИ. Значения совпадают со строками enum TiStatus в
+/// prisma/schema.prisma.
+export enum TiStatus {
+  InProgress = 'in_progress',
+  Done = 'done',
+  Warning = 'warning',
+}
+
 export type Dependency = {
   stage: keyof Stages;
   subtask?: string;
