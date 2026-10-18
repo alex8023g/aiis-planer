@@ -1,0 +1,178 @@
+// ATS dictionary of measuring instruments (KU_MS_COMPONENTS_DICTIONARY).
+// Loaded in full from the XML export (docs/si_dictionary_ats/) and replaced in
+// full by the next one — nobody edits it by hand, so keys are ATS codes, not cuids.
+// Ats prefix: Meter, Tt, Tn and Uspd are already taken by project equipment.
+
+/// The loaded export: which version of the dictionary is in the database now.
+model AtsDictionaryImport {
+  id          Int      @id @default(autoincrement())
+  /// generationtime from the export's root element.
+  generatedAt DateTime
+  fileName    String
+  importedAt  DateTime @default(now())
+}
+
+/// Meter type. The type has no ATS code of its own — modifications do — and
+/// the GRSI number repeats across types, so the key is surrogate.
+model AtsMeterType {
+  id                  Int                    @id @default(autoincrement())
+  name                String
+  grsiCode            String
+  isIntegral          Boolean
+  /// Calibration interval, years.
+  calibrationInterval Int
+  modifications       AtsMeterModification[]
+
+  @@index([grsiCode])
+}
+
+model AtsMeterModification {
+  atsCode          String       @id
+  typeId           Int
+  type             AtsMeterType @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  name             String
+  manufacturer     String
+  activeChannels   Int
+  reactiveChannels Int
+  /// Rated currents: "5", "1", "2" or no-transformer / digital.
+  ratedCurrents    String[]
+  /// transformer / no-transformer / digital.
+  ratedVoltages    String[]
+  comment          String?
+  stopDateAiis     DateTime?    @db.Date
+  stopDateIsu      DateTime?    @db.Date
+  stopDateUnion    DateTime?    @db.Date
+  inStopList       Boolean
+  /// Accuracy class pairs as "active/reactive", e.g. ["0.5S/1", "1/2"];
+  /// "-" where that kind of energy is not measured, e.g. "1/-".
+  accuracyClasses  String[]
+
+  @@index([typeId])
+  @@index([name])
+}
+
+/// Current transformer type — a GRSI entry. One GRSI number usually covers several
+/// type names.
+model AtsCurrentTransformerType {
+  atsCode              String                      @id
+  grsiCode             String
+  /// Calibration intervals, years; some types have two.
+  calibrationIntervals Int[]
+  manufacturers        String[]
+  typeNames            AtsCurrentTransformerName[]
+
+  @@index([grsiCode])
+}
+
+/// Current transformer type name (type-name), e.g. "ТЛО-10".
+model AtsCurrentTransformerName {
+  id            Int                           @id @default(autoincrement())
+  typeId        String
+  type          AtsCurrentTransformerType     @relation(fields: [typeId], references: [atsCode], onDelete: Cascade)
+  name          String
+  isDigital     Boolean
+  comment       String?
+  stopDateAiis  DateTime?                     @db.Date
+  stopDateIsu   DateTime?                     @db.Date
+  stopDateUnion DateTime?                     @db.Date
+  ratings       AtsCurrentTransformerRating[]
+
+  @@index([typeId])
+  @@index([name])
+}
+
+/// Allowed parameter combination for a type name: accuracy class, primary and
+/// secondary current (A), rated secondary load (VA).
+/// The primary value is either a single number or a min–max range.
+/// A few combinations in the export have only the accuracy class, so the
+/// rest is nullable.
+model AtsCurrentTransformerRating {
+  id                Int                       @id @default(autoincrement())
+  typeNameId        Int
+  typeName          AtsCurrentTransformerName @relation(fields: [typeNameId], references: [id], onDelete: Cascade)
+  accuracyClass     String
+  primaryCurrent    Decimal?
+  primaryCurrentMin Decimal?
+  primaryCurrentMax Decimal?
+  secondaryCurrent  Decimal?
+  secondaryLoad     Decimal?
+  /// Serial numbers the combination applies to; empty — applies to any.
+  serialNumbers     String[]
+
+  @@index([typeNameId])
+}
+
+/// Voltage transformer type — a GRSI entry. One GRSI number usually covers several
+/// type names.
+model AtsVoltageTransformerType {
+  atsCode              String                      @id
+  grsiCode             String
+  /// Calibration intervals, years; some types have two.
+  calibrationIntervals Int[]
+  manufacturers        String[]
+  typeNames            AtsVoltageTransformerName[]
+
+  @@index([grsiCode])
+}
+
+/// Voltage transformer type name (type-name), e.g. "НАМИ-10".
+model AtsVoltageTransformerName {
+  id            Int                           @id @default(autoincrement())
+  typeId        String
+  type          AtsVoltageTransformerType     @relation(fields: [typeId], references: [atsCode], onDelete: Cascade)
+  name          String
+  isDigital     Boolean
+  comment       String?
+  stopDateAiis  DateTime?                     @db.Date
+  stopDateIsu   DateTime?                     @db.Date
+  stopDateUnion DateTime?                     @db.Date
+  ratings       AtsVoltageTransformerRating[]
+
+  @@index([typeId])
+  @@index([name])
+}
+
+/// Allowed parameter combination for a type name: accuracy class, primary and
+/// secondary voltage (V), rated secondary load (VA).
+/// The primary value is either a single number or a min–max range.
+/// A few combinations in the export have only the accuracy class, so the
+/// rest is nullable.
+model AtsVoltageTransformerRating {
+  id                Int                       @id @default(autoincrement())
+  typeNameId        Int
+  typeName          AtsVoltageTransformerName @relation(fields: [typeNameId], references: [id], onDelete: Cascade)
+  accuracyClass     String
+  primaryVoltage    Decimal?
+  primaryVoltageMin Decimal?
+  primaryVoltageMax Decimal?
+  secondaryVoltage  Decimal?
+  secondaryLoad     Decimal?
+  /// Serial numbers the combination applies to; empty — applies to any.
+  serialNumbers     String[]
+
+  @@index([typeNameId])
+}
+
+model AtsUspdType {
+  atsCode              String        @id
+  grsiCode             String
+  calibrationIntervals Int[]
+  manufacturers        String[]
+  typeNames            AtsUspdName[]
+
+  @@index([grsiCode])
+}
+
+model AtsUspdName {
+  id            Int         @id @default(autoincrement())
+  typeId        String
+  type          AtsUspdType @relation(fields: [typeId], references: [atsCode], onDelete: Cascade)
+  name          String
+  comment       String?
+  stopDateAiis  DateTime?   @db.Date
+  stopDateIsu   DateTime?   @db.Date
+  stopDateUnion DateTime?   @db.Date
+
+  @@index([typeId])
+  @@index([name])
+}
