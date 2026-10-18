@@ -39,7 +39,6 @@ import { copyText, parseClipboard } from '@/lib/clipboard';
 import { emptyRow, voltageClassLabels, yesNo } from '@/lib/survey-cells';
 import {
   invalidValueError,
-  needsReplacement,
   parsePolling,
   parseTiStatus,
   parseVoltageClass,
@@ -71,7 +70,9 @@ import { useCellSelection } from './useCellSelection';
 /// Колонки, где в режиме правки можно выделять ячейки (индексы в
 /// surveyTiColumns): правимые (EDITABLE_COLUMNS) и «опрос». Выделение одно на таблицу — клик в другой колонке
 /// переносит его туда. В режиме просмотра клик выделяет строку целиком.
-const SELECTABLE_COLUMNS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+/// «Соотв. по справочнику АТС» (6) не выделяется: её не правят, она считается
+/// по типу ПУ.
+const SELECTABLE_COLUMNS = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14];
 /// Колонка «тех. решение» в surveyTiColumns.
 const SOLUTION_COLUMN = 10;
 /// Колонка «IP» в surveyTiColumns.
@@ -80,6 +81,8 @@ const IP_COLUMN = 13;
 const CONNECTED_COLUMN = 15;
 /// Колонка «статус» в surveyTiColumns.
 const STATUS_COLUMN = 3;
+/// Колонка «соотв. по справочнику АТС» в surveyTiColumns.
+const ATS_DICTIONARY_COLUMN = 6;
 
 /// Статус ТИ в таблице — точкой: серая — в работе, зелёная — готово,
 /// оранжевая — внимание.
@@ -94,7 +97,7 @@ const tiStatusDotColors: Record<TiStatus, string> = {
 type CheckStatus = { ok: boolean; error?: string };
 /// Колонки, что правятся в режиме правки, и поле под каждой. Тех. решение
 /// и IP — общие на группу (ячейка объединена на группу), остальное — своё у
-/// каждой ТИ. Статус, Uном, схема, «требуется замена», «опрашивается» и RS-485 —
+/// каждой ТИ. Статус, Uном, схема, «опрашивается» и RS-485 —
 /// перечисления и да/нет: текст ячейки разбирают parse* из survey-ti.
 const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
   1: 'number',
@@ -102,8 +105,7 @@ const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
   3: 'status',
   4: 'uNom',
   5: 'meterType',
-  6: 'wiring',
-  7: 'needsReplacement',
+  7: 'wiring',
   8: 'isPolled',
   9: 'freeRs485',
   10: 'technicalSolution',
@@ -129,8 +131,6 @@ function fieldValue(ti: SurveyTi | undefined, col: number): string {
       return ti.currentMeter?.type ?? '';
     case 'wiring':
       return ti.wiring ? wiringLabels[ti.wiring] : '';
-    case 'needsReplacement':
-      return yesNo(needsReplacement(ti))?.v ?? '';
     case 'isPolled': {
       const kind = ti.group?.modem?.kind;
 
@@ -199,22 +199,13 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
           currentMeter: {
             isCompliant: ti?.currentMeter?.isCompliant ?? null,
             type: trimmed,
+            /// Справочник на клиенте не лежит — до ответа сервера «не
+            /// проверено», а не старое значение от прежнего типа.
+            inAtsDictionary: null,
+            atsDictionaryReason: null,
           },
         });
         break;
-      case 'needsReplacement': {
-        const needs = parseYesNo(value);
-
-        if (needs !== undefined) {
-          patchTi(ti, {
-            currentMeter: {
-              type: ti?.currentMeter?.type ?? null,
-              isCompliant: needs === null ? null : !needs,
-            },
-          });
-        }
-        break;
-      }
       case 'proposedMeterType':
         patchTi(ti, { proposedMeter: { type: trimmed } });
         break;
@@ -748,6 +739,20 @@ export function SurveyView({
             )}
           />
         ),
+      };
+    }
+
+    /// Типа ПУ нет в справочнике АТС — красным: такой счётчик, скорее всего,
+    /// придётся менять, и строку должно быть видно сразу. Почему «нет» — в
+    /// подсказке.
+    if (
+      col === ATS_DICTIONARY_COLUMN &&
+      ti?.currentMeter?.inAtsDictionary === false
+    ) {
+      return {
+        ...props,
+        title: ti.currentMeter.atsDictionaryReason ?? undefined,
+        className: cn(props?.className, 'text-red-600 dark:text-red-400'),
       };
     }
 

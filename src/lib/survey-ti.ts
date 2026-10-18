@@ -39,8 +39,17 @@ export type SurveyTi = {
   /// ТИ.
   meterAddress: string | null;
   port: string | null;
-  /// Счётчик, что стоит сейчас (state = current).
-  currentMeter: { type: string | null; isCompliant: boolean | null } | null;
+  /// Счётчик, что стоит сейчас (state = current). inAtsDictionary — есть ли
+  /// его тип в справочнике СИ АТС (см. src/lib/siDictionaryMatch.ts);
+  /// интегральный счётчик считается «нет». null — тип не записан или ещё не
+  /// проверен.
+  currentMeter: {
+    type: string | null;
+    isCompliant: boolean | null;
+    inAtsDictionary: boolean | null;
+    /// Почему «нет» — для подсказки в ячейке; null, когда «да» или пусто.
+    atsDictionaryReason: string | null;
+  } | null;
   /// Счётчик, который ставим взамен (state = proposed).
   proposedMeter: { type: string | null } | null;
   /// Общее с другими ТИ группы. null — ТИ сама по себе.
@@ -66,8 +75,8 @@ export const surveyTiColumns: SurveyColumn[] = [
   { title: 'статус', minWidth: 48, compact: true, resizable: false },
   { title: 'Uном, кВ', minWidth: 80 },
   { title: 'тип ПУ', minWidth: 160 },
+  { title: 'соотв. по справочнику АТС', minWidth: 120 },
   { title: 'схема включения', minWidth: 100 },
-  { title: 'требуется замена ПУ (да/нет)', minWidth: 200 },
   { title: 'опрашивается / не опрашивается', minWidth: 200 },
   { title: 'свобод. RS-485', minWidth: 100 },
   { title: 'тех. решение', minWidth: 320 },
@@ -224,15 +233,6 @@ export function invalidValueError(field: string, value: string): string | null {
   }
 }
 
-/// «Требуется замена» — обратное к «соответствует требованиям».
-export function needsReplacement(ti: SurveyTi): boolean | null {
-  const isCompliant = ti.currentMeter?.isCompliant;
-
-  return isCompliant === null || isCompliant === undefined
-    ? null
-    : !isCompliant;
-}
-
 /// Ячейки таблицы опроса — по строке на ТИ, в порядке surveyTiColumns.
 /// connected — текст «подключён» по id ТИ: итог кнопки Connect живёт только
 /// на клиенте, до перезагрузки страницы, в базе его нет.
@@ -275,8 +275,8 @@ export function surveyTiCells(
       text(tiStatusLabels[ti.status]),
       text(ti.uNom ? voltageClassLabels[ti.uNom] : ''),
       text(ti.currentMeter?.type),
+      yesNo(ti.currentMeter?.inAtsDictionary),
       text(ti.wiring ? wiringLabels[ti.wiring] : ''),
-      yesNo(needsReplacement(ti)),
       cell(pollingTexts[index], pollingSpans[index]),
       yesNo(ti.freeRs485),
       cell(ti.group?.technicalSolution ?? '', groupSpans[index]),
