@@ -29,5 +29,9 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   /// Пропускаем сами маршруты авторизации и статику Next.js.
-  matcher: ['/((?!api/auth|_next/static|_next/image|favicon.ico).*)'],
+  /// Импорт справочника СИ АТС тоже: proxy буферизует не больше 10 МБ тела
+  /// запроса, а выгрузка — ~400 МБ; сессию маршрут проверяет сам.
+  matcher: [
+    '/((?!api/auth|api/si-dictionary-ats/import|_next/static|_next/image|favicon.ico).*)',
+  ],
 };
