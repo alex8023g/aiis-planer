@@ -39,15 +39,12 @@ import { copyText, parseClipboard } from '@/lib/clipboard';
 import { emptyRow, voltageClassLabels, yesNo } from '@/lib/survey-cells';
 import {
   invalidValueError,
-  needsReplacement,
-  parsePolling,
   parseTiStatus,
   parseVoltageClass,
   parseWiringScheme,
   parseYesNo,
-  pollingModemLabels,
-  pollingText,
   surveyTiCells,
+  suggestedWiring,
   surveyTiColumns,
   tiStatusLabels,
   wiringLabels,
@@ -71,7 +68,9 @@ import { useCellSelection } from './useCellSelection';
 /// Колонки, где в режиме правки можно выделять ячейки (индексы в
 /// surveyTiColumns): правимые (EDITABLE_COLUMNS) и «опрос». Выделение одно на таблицу — клик в другой колонке
 /// переносит его туда. В режиме просмотра клик выделяет строку целиком.
-const SELECTABLE_COLUMNS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+/// «Соотв. по справочнику АТС» (6) не выделяется: её не правят, она считается
+/// по типу ПУ.
+const SELECTABLE_COLUMNS = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14];
 /// Колонка «тех. решение» в surveyTiColumns.
 const SOLUTION_COLUMN = 10;
 /// Колонка «IP» в surveyTiColumns.
@@ -80,6 +79,10 @@ const IP_COLUMN = 13;
 const CONNECTED_COLUMN = 15;
 /// Колонка «статус» в surveyTiColumns.
 const STATUS_COLUMN = 3;
+/// Колонка «соотв. по справочнику АТС» в surveyTiColumns.
+const ATS_DICTIONARY_COLUMN = 6;
+/// Колонка «схема включения» в surveyTiColumns.
+const WIRING_COLUMN = 7;
 
 /// Статус ТИ в таблице — точкой: серая — в работе, зелёная — готово,
 /// оранжевая — внимание.
@@ -94,7 +97,7 @@ const tiStatusDotColors: Record<TiStatus, string> = {
 type CheckStatus = { ok: boolean; error?: string };
 /// Колонки, что правятся в режиме правки, и поле под каждой. Тех. решение
 /// и IP — общие на группу (ячейка объединена на группу), остальное — своё у
-/// каждой ТИ. Статус, Uном, схема, «требуется замена», «опрашивается» и RS-485 —
+/// каждой ТИ. Статус, Uном, схема и RS-485 —
 /// перечисления и да/нет: текст ячейки разбирают parse* из survey-ti.
 const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
   1: 'number',
@@ -102,9 +105,8 @@ const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
   3: 'status',
   4: 'uNom',
   5: 'meterType',
-  6: 'wiring',
-  7: 'needsReplacement',
-  8: 'isPolled',
+  7: 'wiring',
+  8: 'existingPolling',
   9: 'freeRs485',
   10: 'technicalSolution',
   11: 'proposedMeterType',
@@ -129,16 +131,8 @@ function fieldValue(ti: SurveyTi | undefined, col: number): string {
       return ti.currentMeter?.type ?? '';
     case 'wiring':
       return ti.wiring ? wiringLabels[ti.wiring] : '';
-    case 'needsReplacement':
-      return yesNo(needsReplacement(ti))?.v ?? '';
-    case 'isPolled': {
-      const kind = ti.group?.modem?.kind;
-
-      return pollingText(
-        ti.isPolled,
-        kind ? pollingModemLabels[kind] : undefined,
-      );
-    }
+    case 'existingPolling':
+      return ti.existingPolling ?? '';
     case 'freeRs485':
       return yesNo(ti.freeRs485)?.v ?? '';
     case 'technicalSolution':
@@ -199,22 +193,14 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
           currentMeter: {
             isCompliant: ti?.currentMeter?.isCompliant ?? null,
             type: trimmed,
+            /// Справочник на клиенте не лежит — до ответа сервера «не
+            /// проверено», а не старое значение от прежнего типа.
+            inAtsDictionary: null,
+            atsDictionaryReason: null,
+            atsWiring: null,
           },
         });
         break;
-      case 'needsReplacement': {
-        const needs = parseYesNo(value);
-
-        if (needs !== undefined) {
-          patchTi(ti, {
-            currentMeter: {
-              type: ti?.currentMeter?.type ?? null,
-              isCompliant: needs === null ? null : !needs,
-            },
-          });
-        }
-        break;
-      }
       case 'proposedMeterType':
         patchTi(ti, { proposedMeter: { type: trimmed } });
         break;
@@ -242,16 +228,8 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
         if (freeRs485 !== undefined) patchTi(ti, { freeRs485 });
         break;
       }
-      case 'isPolled': {
-        const polling = parsePolling(value);
-
-        if (polling) {
-          patchTi(ti, { isPolled: polling.isPolled });
-
-          if (polling.modemKind) {
-            patchGroup(tiId, { kind: polling.modemKind });
-          }
-        }
+      case 'existingPolling': {
+        patchTi(ti, { existingPolling: trimmed });
         break;
       }
       case 'technicalSolution':
@@ -460,11 +438,12 @@ export function SurveyView({
   }
 
   /// Правка ячейки — через её первую ТИ: для IP и решения экшен сам найдёт
-  /// группу. «Опрашивается» — своё у каждой ТИ, а объединённая ячейка
+  /// группу. «Сущ. опрос» — свой у каждой ТИ, а объединённая ячейка
   /// накрывает ТИ группы с одинаковым текстом: правка — каждой из них.
   function edit(row: number, col: number, value: string): MeterReaderEdit[] {
     const field = EDITABLE_COLUMNS[col]!;
-    const span = field === 'isPolled' ? (rows[row][col]?.rowSpan ?? 1) : 1;
+    const span =
+      field === 'existingPolling' ? (rows[row][col]?.rowSpan ?? 1) : 1;
 
     return optimisticTis
       .slice(row, row + span)
@@ -747,6 +726,36 @@ export function SurveyView({
               tiStatusDotColors[ti.status],
             )}
           />
+        ),
+      };
+    }
+
+    /// Типа ПУ нет в справочнике АТС — красным: такой счётчик, скорее всего,
+    /// придётся менять, и строку должно быть видно сразу. Почему «нет» — в
+    /// подсказке.
+    if (
+      col === ATS_DICTIONARY_COLUMN &&
+      ti?.currentMeter?.inAtsDictionary === false
+    ) {
+      return {
+        ...props,
+        title: ti.currentMeter.atsDictionaryReason ?? undefined,
+        className: cn(props?.className, 'text-red-600 dark:text-red-400'),
+      };
+    }
+
+    /// Схема не записана и подсказана (по Uном или справочнику АТС) — серым:
+    /// её ещё надо подтвердить. Править ячейку начинают с пустого: подсказка
+    /// не значение.
+    const suggested = col === WIRING_COLUMN && ti ? suggestedWiring(ti) : null;
+
+    if (suggested) {
+      return {
+        ...props,
+        title: suggested.source,
+        className: cn(
+          props?.className,
+          'text-neutral-400 dark:text-neutral-500',
         ),
       };
     }

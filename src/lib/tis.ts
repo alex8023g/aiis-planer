@@ -4,6 +4,7 @@ import type {
 } from '@/app/projects/[id]/aiis2/survey-data';
 import { EquipmentState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
+import { getMeterDictionaryChecker } from '@/lib/siDictionaryMatch';
 import {
   cell,
   emptyRow,
@@ -292,6 +293,7 @@ export async function getMeterReaderTis(
 /// (surveyTiCells в src/lib/survey-ti.ts). Доступ не проверяется, как и в
 /// getTiRows.
 export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
+  const checkMeter = await getMeterDictionaryChecker();
   const tis = await prisma.ti.findMany({
     where: { projectId },
     orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
@@ -302,7 +304,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
       status: true,
       uNom: true,
       wiring: true,
-      isPolled: true,
+      existingPolling: true,
       freeRs485: true,
       connection: { select: { meterAddress: true, port: true } },
       meters: {
@@ -334,13 +336,20 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
     const proposed = meters.find(
       (meter) => meter.state === EquipmentState.proposed,
     );
+    const verdict = current?.type ? checkMeter(current.type) : null;
 
     return {
       ...ti,
       meterAddress: connection?.meterAddress ?? null,
       port: connection?.port ?? null,
       currentMeter: current
-        ? { type: current.type, isCompliant: current.isCompliant }
+        ? {
+            type: current.type,
+            isCompliant: current.isCompliant,
+            inAtsDictionary: verdict ? verdict.ok : null,
+            atsDictionaryReason: verdict && !verdict.ok ? verdict.reason : null,
+            atsWiring: verdict?.wiring ?? null,
+          }
         : null,
       proposedMeter: proposed ? { type: proposed.type } : null,
       group: group

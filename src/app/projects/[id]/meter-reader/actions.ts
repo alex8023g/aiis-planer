@@ -8,7 +8,6 @@ import { getProject, requireProjectEditor } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import {
   invalidValueError,
-  parsePolling,
   parseTiStatus,
   parseVoltageClass,
   parseWiringScheme,
@@ -35,7 +34,7 @@ export type MeterReaderField =
   | 'uNom'
   | 'wiring'
   | 'needsReplacement'
-  | 'isPolled'
+  | 'existingPolling'
   | 'freeRs485'
   | 'proposedMeterType';
 
@@ -57,7 +56,7 @@ const FIELDS = new Set<string>([
   'uNom',
   'wiring',
   'needsReplacement',
-  'isPolled',
+  'existingPolling',
   'freeRs485',
   'proposedMeterType',
 ]);
@@ -123,8 +122,8 @@ export async function readMeterProfileForTi(
 /// Записать правки ячеек MeterReader — одну (правка ячейки) или пачку
 /// (вставка из буфера). Каждое поле живёт в своей таблице:
 /// наименование — в Ti, порт и адрес — в Connection (заводится при первой
-/// записи), Uном, схема, «опрашивается» и RS-485 — тоже в Ti, IP — в
-/// SIM-карте модема группы, вид модема из «опрашивается» — в модеме группы,
+/// записи), Uном, схема, существующий опрос и RS-485 — тоже в Ti, IP — в
+/// SIM-карте модема группы,
 /// тех. решение — в TechnicalSolution группы, тип ПУ и замена — в счётчиках
 /// ТИ, что стоит сейчас и что ставим (заводятся при первой записи),
 /// «требуется замена» — обратным к соответствию требованиям у того, что стоит. Модем и
@@ -223,20 +222,11 @@ export async function updateMeterReaderCells(
           create: { tiId, state, isCompliant },
           update: { isCompliant },
         });
-      } else if (field === 'isPolled') {
-        const { isPolled, modemKind } = parsePolling(value)!;
-
-        await tx.ti.update({ where: { id: tiId }, data: { isPolled } });
-
-        /// Вид модема назвали («да, по встр. модему») — он общий на группу.
-        const modemId = byId.get(tiId)!.group?.modem?.id;
-
-        if (modemKind && modemId) {
-          await tx.modem.update({
-            where: { id: modemId },
-            data: { kind: modemKind },
-          });
-        }
+      } else if (field === 'existingPolling') {
+        await tx.ti.update({
+          where: { id: tiId },
+          data: { existingPolling: nullable },
+        });
       } else if (field === 'meterType' || field === 'proposedMeterType') {
         /// Тип ПУ — у счётчика, что стоит сейчас, замена — у того, что
         /// ставим. Пустой тип — null, а сам счётчик остаётся: у него есть и
