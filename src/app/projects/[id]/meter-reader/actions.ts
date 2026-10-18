@@ -17,6 +17,8 @@ import type { ActionResult } from '@/lib/types';
 import {
   parseConnection,
   readMeterProfile,
+  readMeterTimeCorrections,
+  type MeterTimeCorrection,
   type MeterProfileReading,
 } from './power_reader';
 
@@ -69,6 +71,10 @@ const DEFAULT_METER_PORT = '6001';
 export type ReadMeterProfileResult =
   { ok: true; reading: MeterProfileReading } | { ok: false; error: string };
 
+export type ReadMeterTimeCorrectionsResult =
+  | { ok: true; records: MeterTimeCorrection[] }
+  | { ok: false; error: string };
+
 /// Read the latest available profile day from a meter. Connection details are
 /// loaded by TI id rather than accepted from the browser.
 export async function readMeterProfileForTi(
@@ -111,6 +117,53 @@ export async function readMeterProfileForTi(
     const reading = await readMeterProfile(config);
 
     return { ok: true, reading };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function readMeterTimeCorrectionsForTi(
+  projectId: string,
+  tiId: string,
+): Promise<ReadMeterTimeCorrectionsResult> {
+  const user = await requireUser();
+
+  if (!(await getProject(projectId, user))) {
+    return { ok: false, error: 'Проект не найден' };
+  }
+
+  const ti = await prisma.ti.findFirst({
+    where: { id: tiId, projectId },
+    select: {
+      connection: { select: { meterAddress: true, port: true } },
+      group: {
+        select: {
+          modem: { select: { simCard: { select: { ip: true } } } },
+        },
+      },
+    },
+  });
+
+  if (!ti) return { ok: false, error: 'ТИ не найдена — обновите страницу' };
+
+  const ip = ti.group?.modem?.simCard?.ip;
+  const address = ti.connection?.meterAddress;
+
+  if (!ip) return { ok: false, error: 'У ТИ не указан IP' };
+  if (!address) return { ok: false, error: 'У ТИ не указан адрес счётчика' };
+
+  try {
+    const config = parseConnection({
+      ip,
+      port: ti.connection?.port || DEFAULT_METER_PORT,
+      address,
+    });
+    const records = await readMeterTimeCorrections(config);
+
+    return { ok: true, records };
   } catch (error) {
     return {
       ok: false,

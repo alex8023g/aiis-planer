@@ -597,6 +597,55 @@ function decodeBcd(value: number, field: string): number {
   return high * 10 + low;
 }
 
+function decodeTimeCorrectionTimestamp(data: Buffer): {
+  formatted: string;
+  epochSeconds: number;
+} {
+  if (data.length !== 7) {
+    throw new MeterReaderError(
+      `Time-correction timestamp must contain 7 bytes: ${hexBytes(data)}`,
+    );
+  }
+
+  const [
+    secondByte,
+    minuteByte,
+    hourByte,
+    weekdayByte,
+    dayByte,
+    monthByte,
+    yearByte,
+  ] = data;
+  const second = decodeBcd(secondByte!, 'seconds');
+  const minute = decodeBcd(minuteByte!, 'minutes');
+  const hour = decodeBcd(hourByte!, 'hours');
+  const weekday = decodeBcd(weekdayByte!, 'weekday');
+  const day = decodeBcd(dayByte!, 'day');
+  const month = decodeBcd(monthByte!, 'month');
+  const year = decodeBcd(yearByte!, 'year');
+  const date = new Date(Date.UTC(2000 + year, month - 1, day));
+
+  if (
+    second > 59 ||
+    minute > 59 ||
+    hour > 23 ||
+    weekday > 7 ||
+    date.getUTCFullYear() !== 2000 + year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    throw new MeterReaderError(
+      `Invalid time-correction timestamp: ${hexBytes(data)}`,
+    );
+  }
+
+  return {
+    formatted: `${String(day).padStart(2, '0')}.${String(month).padStart(2, '0')}.${String(year).padStart(2, '0')} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`,
+    epochSeconds:
+      Date.UTC(2000 + year, month - 1, day, hour, minute, second) / 1000,
+  };
+}
+
 function decodeMeterIdentityResponse(
   response: Buffer,
   address: number,
@@ -1126,6 +1175,76 @@ async function readMeterIdentity(
   );
 }
 
+export type MeterTimeCorrection = {
+  index: number;
+  before: string;
+  after: string;
+  /// null when the record could not be decoded (before/after hold raw bytes).
+  secondsChanged: number | null;
+};
+
+async function readTimeCorrectionJournal(
+  config: ConnectionConfig,
+  timeout: number,
+): Promise<MeterTimeCorrection[]> {
+  const mode: ChecksumMode = 'crc';
+
+  return withMeterConnection(
+    config,
+    mode,
+    timeout,
+    config.password,
+    async (connection) => {
+      const records: MeterTimeCorrection[] = [];
+      for (let index = 9; index >= 0; index--) {
+        await connection.send(
+          addChecksum(Buffer.from([config.address, 0x09, 0x02, index]), mode),
+        );
+        const response = await connection.receive(
+          timeout,
+          1 + 14 + checksumSize(mode),
+        );
+        const body = verifyChecksum(
+          response,
+          mode,
+          'time-correction journal response',
+        );
+        verifyAddress(response, config.address);
+        const data = body.subarray(1);
+        if (data.length === 1) throwStatus(data[0]!);
+        if (data.length !== 14) {
+          throw new MeterReaderError(
+            `Unexpected time-correction journal response for record ${index}: ${hexBytes(response)}`,
+          );
+        }
+
+        /// Never-written journal slots come back as all zeros.
+        if (data.every((byte) => byte === 0)) continue;
+
+        try {
+          const before = decodeTimeCorrectionTimestamp(data.subarray(0, 7));
+          const after = decodeTimeCorrectionTimestamp(data.subarray(7, 14));
+          records.push({
+            index,
+            before: before.formatted,
+            after: after.formatted,
+            secondsChanged: after.epochSeconds - before.epochSeconds,
+          });
+        } catch {
+          /// Show the raw bytes rather than lose the whole journal.
+          records.push({
+            index,
+            before: hexBytes(data.subarray(0, 7)),
+            after: hexBytes(data.subarray(7, 14)),
+            secondsChanged: null,
+          });
+        }
+      }
+      return records;
+    },
+  );
+}
+
 async function readMeterType(
   config: ConnectionConfig,
   options: Options,
@@ -1492,6 +1611,13 @@ export async function readMeterProfile(
       incomplete: slice.incomplete,
     })),
   };
+}
+
+export async function readMeterTimeCorrections(
+  config: ConnectionConfig,
+  timeout = 3,
+): Promise<MeterTimeCorrection[]> {
+  return readTimeCorrectionJournal(config, timeout);
 }
 
 /// Status a meter returns when it only answers after the channel is opened.
