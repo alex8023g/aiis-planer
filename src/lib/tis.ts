@@ -304,7 +304,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
       status: true,
       uNom: true,
       wiring: true,
-      isPolled: true,
+      existingPolling: true,
       freeRs485: true,
       connection: { select: { meterAddress: true, port: true } },
       meters: {

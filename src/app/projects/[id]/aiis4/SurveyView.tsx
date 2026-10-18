@@ -39,13 +39,10 @@ import { copyText, parseClipboard } from '@/lib/clipboard';
 import { emptyRow, voltageClassLabels, yesNo } from '@/lib/survey-cells';
 import {
   invalidValueError,
-  parsePolling,
   parseTiStatus,
   parseVoltageClass,
   parseWiringScheme,
   parseYesNo,
-  pollingModemLabels,
-  pollingText,
   surveyTiCells,
   surveyTiColumns,
   tiStatusLabels,
@@ -97,7 +94,7 @@ const tiStatusDotColors: Record<TiStatus, string> = {
 type CheckStatus = { ok: boolean; error?: string };
 /// Колонки, что правятся в режиме правки, и поле под каждой. Тех. решение
 /// и IP — общие на группу (ячейка объединена на группу), остальное — своё у
-/// каждой ТИ. Статус, Uном, схема, «опрашивается» и RS-485 —
+/// каждой ТИ. Статус, Uном, схема и RS-485 —
 /// перечисления и да/нет: текст ячейки разбирают parse* из survey-ti.
 const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
   1: 'number',
@@ -106,7 +103,7 @@ const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
   4: 'uNom',
   5: 'meterType',
   7: 'wiring',
-  8: 'isPolled',
+  8: 'existingPolling',
   9: 'freeRs485',
   10: 'technicalSolution',
   11: 'proposedMeterType',
@@ -131,14 +128,8 @@ function fieldValue(ti: SurveyTi | undefined, col: number): string {
       return ti.currentMeter?.type ?? '';
     case 'wiring':
       return ti.wiring ? wiringLabels[ti.wiring] : '';
-    case 'isPolled': {
-      const kind = ti.group?.modem?.kind;
-
-      return pollingText(
-        ti.isPolled,
-        kind ? pollingModemLabels[kind] : undefined,
-      );
-    }
+    case 'existingPolling':
+      return ti.existingPolling ?? '';
     case 'freeRs485':
       return yesNo(ti.freeRs485)?.v ?? '';
     case 'technicalSolution':
@@ -233,16 +224,8 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
         if (freeRs485 !== undefined) patchTi(ti, { freeRs485 });
         break;
       }
-      case 'isPolled': {
-        const polling = parsePolling(value);
-
-        if (polling) {
-          patchTi(ti, { isPolled: polling.isPolled });
-
-          if (polling.modemKind) {
-            patchGroup(tiId, { kind: polling.modemKind });
-          }
-        }
+      case 'existingPolling': {
+        patchTi(ti, { existingPolling: trimmed });
         break;
       }
       case 'technicalSolution':
@@ -451,11 +434,12 @@ export function SurveyView({
   }
 
   /// Правка ячейки — через её первую ТИ: для IP и решения экшен сам найдёт
-  /// группу. «Опрашивается» — своё у каждой ТИ, а объединённая ячейка
+  /// группу. «Сущ. опрос» — свой у каждой ТИ, а объединённая ячейка
   /// накрывает ТИ группы с одинаковым текстом: правка — каждой из них.
   function edit(row: number, col: number, value: string): MeterReaderEdit[] {
     const field = EDITABLE_COLUMNS[col]!;
-    const span = field === 'isPolled' ? (rows[row][col]?.rowSpan ?? 1) : 1;
+    const span =
+      field === 'existingPolling' ? (rows[row][col]?.rowSpan ?? 1) : 1;
 
     return optimisticTis
       .slice(row, row + span)

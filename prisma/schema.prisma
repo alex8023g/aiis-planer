@@ -373,46 +373,47 @@ enum WiringScheme {
 /// Точка измерения (ТИ) из опроса. Что на ней стоит — в дочерних таблицах:
 /// у каждой ТИ свой набор оборудования, общего между ТИ нет.
 model Ti {
-  id         String        @id @default(cuid())
-  projectId  String
-  project    Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id              String        @id @default(cuid())
+  projectId       String
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   /// № ТИ на ОС. Строка: в опросе встречаются номера вида «3а».
-  number     String
-  name       String
+  number          String
+  name            String
   /// Класс напряжения ТИ. Необязателен: на опросе его записывают не всегда,
   /// и null здесь — «ещё не выяснили», а не «напряжения нет».
-  uNom       VoltageClass?
+  uNom            VoltageClass?
   /// Схема включения счётчика. null — «ещё не выяснили», как и у uNom.
-  wiring     WiringScheme?
-  /// Опрашивается ли счётчик сейчас. Отдельным полем, а не по наличию модема:
-  /// модем на ТИ бывает, а опроса нет. null — «не выяснили».
-  isPolled   Boolean?
+  wiring          WiringScheme?
+  /// Существующий опрос счётчика — как записали на опросе: «нет», «да, по
+  /// встр. модему», «Пирамида по GSM». Свободный текст: в одно да/нет с
+  /// видом модема всё это не укладывается. null — «не выяснили».
+  existingPolling String?
   /// Есть ли у счётчика свободный RS-485 — к нему подключают шкаф связи.
   /// null — «не выяснили».
-  freeRs485  Boolean?
+  freeRs485       Boolean?
   /// Группа ТИ с общими УСПД, модемом, тех. решением, текстом опроса и
   /// примечанием. Группа есть у каждой ТИ — у одиночной своя: её заводят
   /// добавление ТИ, «Разъединить» и сиды. Колонка всё же необязательна ради
   /// SetNull, а не Cascade: удалённая группа не должна уносить сами ТИ.
   /// Группа должна быть из того же проекта, что и ТИ: связью это не выразить
   /// (составной ключ с SetNull обнулил бы и projectId), следят на записи.
-  groupId    String?
-  group      TiGroup?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  groupId         String?
+  group           TiGroup?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
   /// Порядок в таблице опроса: задаёт составитель.
-  position   Int
+  position        Int
   /// Заметки к самой ТИ — в отличие от примечания группы, общего для всех её
   /// ТИ.
-  notes      String?
-  status     TiStatus      @default(in_progress)
+  notes           String?
+  status          TiStatus      @default(in_progress)
   /// Не больше двух: текущий и новый (см. @@unique в Meter).
-  meters     Meter[]
+  meters          Meter[]
   // ttId          String
   // tt            Tt            @relation(fields: [ttId], references: [id], onDelete: Cascade)
-  tt         Tt[]
-  tn         Tn[]
-  connection Connection?
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  tt              Tt[]
+  tn              Tn[]
+  connection      Connection?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@index([projectId])
   @@index([groupId])

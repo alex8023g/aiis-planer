@@ -108,13 +108,11 @@ function ratio(value: string | null): string | null {
   return value === '---' ? null : value;
 }
 
-/// «да, по встр. модему» / «да, по внеш. Модему»: опрашивается ли точка и
-/// через какой модем. Модем без вида в опросе не бывает — тогда модема нет.
-function polling(
-  value: string | null,
-  row: number,
-): { isPolled: boolean | null; modem: ModemKind | null } {
-  if (value === null) return { isPolled: null, modem: null };
+/// «да, по встр. модему» / «да, по внеш. Модему»: через какой модем
+/// опрашивается точка. Модем без вида в опросе не бывает — тогда модема нет.
+/// Сам текст ложится в Ti.existingPolling как есть.
+function polling(value: string | null): { modem: ModemKind | null } {
+  if (value === null) return { modem: null };
 
   const text = value.toLowerCase();
   const modem = text.includes('встр')
@@ -123,7 +121,7 @@ function polling(
       ? ModemKind.external
       : null;
 
-  return { isPolled: yesNo(value, row, COL.polling), modem };
+  return { modem };
 }
 
 /// Строка, которая держит значение объединённой ячейки: для «M2:M3» строки 2 и
@@ -184,7 +182,7 @@ async function main() {
     for (const { row, cells } of survey.rows) {
       const solutionRow = solutionOwners.get(row) ?? row;
       const solution = cellsByRow.get(solutionRow)?.[COL.solution] ?? null;
-      const { modem } = polling(cells[COL.polling] ?? null, row);
+      const { modem } = polling(cells[COL.polling] ?? null);
 
       /// Без номера ТИ строка опроса — не ТИ, группа ей не нужна. Остальным
       /// группа нужна всем: ТИ без решения и модема — в своей собственной.
@@ -265,9 +263,10 @@ async function main() {
             position,
             uNom: uNom(value(COL.uNom), row),
             wiring: wiring(value(COL.wiring), row),
-            isPolled: polling(value(COL.polling), row).isPolled,
+            existingPolling: value(COL.polling),
             freeRs485: yesNo(value(COL.freeRs485), row, COL.freeRs485),
-            groupId: groupKey === undefined ? undefined : groupIds.get(groupKey),
+            groupId:
+              groupKey === undefined ? undefined : groupIds.get(groupKey),
             /// В опросе одна колонка на счётчик — тот, что стоит сейчас.
             /// «Требуется замена» читается наоборот: «да» — не соответствует.
             meters:
