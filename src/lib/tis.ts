@@ -348,6 +348,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
             isCompliant: current.isCompliant,
             inAtsDictionary: verdict ? verdict.ok : null,
             atsDictionaryReason: verdict && !verdict.ok ? verdict.reason : null,
+            atsWiring: verdict?.wiring ?? null,
           }
         : null,
       proposedMeter: proposed ? { type: proposed.type } : null,

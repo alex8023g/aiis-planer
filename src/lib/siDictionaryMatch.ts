@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { WiringScheme } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 
 /// Matching equipment types typed in surveys against the ATS SI dictionary.
@@ -27,9 +28,12 @@ export function dictionaryKey(name: string): string {
 }
 
 /// Verdict for a meter type: fit for AIIS or not, and why not — shown on
-/// hover in the survey table.
-export type MeterDictionaryVerdict =
-  { ok: true } | { ok: false; reason: string };
+/// hover in the survey table. wiring — the connection scheme the dictionary
+/// implies (see dictionaryWiring); null when the type is not found or its
+/// entries disagree.
+export type MeterDictionaryVerdict = { wiring: WiringScheme | null } & (
+  { ok: true } | { ok: false; reason: string }
+);
 
 const NOT_FOUND = 'Тип не найден в справочнике АТС';
 const NON_COMPLIANT_COMMENT = /не соответств/i;
@@ -77,6 +81,37 @@ function failures(modification: {
   return reasons;
 }
 
+/// Connection scheme from rated currents and voltages: current through a
+/// transformer — a rated current in amperes ("1", "5"; "no-transformer" is
+/// direct), voltage through a transformer — "transformer". Both through
+/// transformers — indirect, one — semi-indirect, none — direct. Digital
+/// meters and entries without ratings (integral meters) give nothing.
+function dictionaryWiring(modification: {
+  ratedCurrents: string[];
+  ratedVoltages: string[];
+}): WiringScheme | null {
+  const { ratedCurrents, ratedVoltages } = modification;
+
+  if (ratedCurrents.length === 0 || ratedVoltages.length === 0) return null;
+
+  const isRating = (value: string) =>
+    value !== 'no-transformer' && value !== 'digital';
+
+  if (!ratedCurrents.some(isRating) && ratedCurrents.includes('digital')) {
+    return null;
+  }
+
+  const currentTransformer = ratedCurrents.some(isRating);
+  const voltageTransformer = ratedVoltages.includes('transformer');
+
+  if (currentTransformer && voltageTransformer) return WiringScheme.indirect;
+  if (currentTransformer || voltageTransformer) {
+    return WiringScheme.semiIndirect;
+  }
+
+  return WiringScheme.direct;
+}
+
 /// Checker of meter types against the dictionary's meter modifications
 /// (~3K names, read once per call). A name listed several times is fit if
 /// any of its entries is; otherwise the reasons of all entries are given.
@@ -91,15 +126,23 @@ export async function getMeterDictionaryChecker(): Promise<
       stopDateUnion: true,
       inStopList: true,
       comment: true,
+      ratedCurrents: true,
+      ratedVoltages: true,
       type: { select: { isIntegral: true } },
     },
   });
   const fit = new Set<string>();
   const unfit = new Map<string, Set<string>>();
+  /// Schemes of all entries of a name: one scheme is used only if they agree.
+  const wirings = new Map<string, Set<WiringScheme | null>>();
 
   for (const modification of modifications) {
     const key = dictionaryKey(modification.name);
     const reasons = failures(modification);
+    const known = wirings.get(key) ?? new Set<WiringScheme | null>();
+
+    known.add(dictionaryWiring(modification));
+    wirings.set(key, known);
 
     if (reasons.length === 0) {
       fit.add(key);
@@ -113,11 +156,17 @@ export async function getMeterDictionaryChecker(): Promise<
 
   return (type) => {
     const key = dictionaryKey(type);
+    const schemes = wirings.get(key);
+    const wiring = schemes?.size === 1 ? [...schemes][0] : null;
 
-    if (fit.has(key)) return { ok: true };
+    if (fit.has(key)) return { ok: true, wiring };
 
     const reasons = unfit.get(key);
 
-    return { ok: false, reason: reasons ? [...reasons].join('\n') : NOT_FOUND };
+    return {
+      ok: false,
+      reason: reasons ? [...reasons].join('\n') : NOT_FOUND,
+      wiring,
+    };
   };
 }

@@ -50,6 +50,9 @@ export type SurveyTi = {
     inAtsDictionary: boolean | null;
     /// Почему «нет» — для подсказки в ячейке; null, когда «да» или пусто.
     atsDictionaryReason: string | null;
+    /// Схема включения по справочнику АТС — её показывают, пока своя схема
+    /// ТИ не записана. null — по справочнику не определить.
+    atsWiring: DbWiringScheme | null;
   } | null;
   /// Счётчик, который ставим взамен (state = proposed).
   proposedMeter: { type: string | null } | null;
@@ -94,6 +97,35 @@ export const wiringLabels: Record<WiringScheme, string> = {
   [WiringScheme.SemiIndirect]: 'полукос.',
   [WiringScheme.Indirect]: 'косв.',
 };
+
+/// Классы от 6 кВ: счётчик там включают только через ТТ и ТН.
+const INDIRECT_VOLTAGES = new Set<string>([
+  VoltageClass.Kv6,
+  VoltageClass.Kv10,
+  VoltageClass.Kv35,
+  VoltageClass.Kv110,
+  VoltageClass.Kv220,
+  VoltageClass.Kv330,
+  VoltageClass.Kv750,
+]);
+
+/// Схема включения, подсказанная вместо незаписанной: от 6 кВ — косвенная,
+/// ниже — по справочнику АТС (номиналы тока и напряжения счётчика). source —
+/// откуда подсказка, для всплывающей подсказки. null — своя схема записана
+/// или подсказать нечего. В базу подсказка не пишется.
+export function suggestedWiring(
+  ti: SurveyTi,
+): { scheme: DbWiringScheme; source: string } | null {
+  if (ti.wiring) return null;
+
+  if (ti.uNom && INDIRECT_VOLTAGES.has(ti.uNom)) {
+    return { scheme: WiringScheme.Indirect, source: 'По Uном' };
+  }
+
+  const scheme = ti.currentMeter?.atsWiring;
+
+  return scheme ? { scheme, source: 'По справочнику АТС' } : null;
+}
 
 export const tiStatusLabels: Record<TiStatus, string> = {
   [TiStatus.InProgress]: 'в работе',
@@ -214,6 +246,7 @@ export function surveyTiCells(
 
   return tis.map((ti, index) => {
     const modem = ti.group?.modem;
+    const suggested = suggestedWiring(ti);
 
     return [
       text(''),
@@ -223,7 +256,15 @@ export function surveyTiCells(
       text(ti.uNom ? voltageClassLabels[ti.uNom] : ''),
       text(ti.currentMeter?.type),
       yesNo(ti.currentMeter?.inAtsDictionary),
-      text(ti.wiring ? wiringLabels[ti.wiring] : ''),
+      /// Своя схема не записана — подсказанная (SurveyView красит её серым:
+      /// значение подсказано, а не выяснено на опросе).
+      text(
+        ti.wiring
+          ? wiringLabels[ti.wiring]
+          : suggested
+            ? wiringLabels[suggested.scheme]
+            : '',
+      ),
       cell(pollingTexts[index], pollingSpans[index]),
       yesNo(ti.freeRs485),
       cell(ti.group?.technicalSolution ?? '', groupSpans[index]),

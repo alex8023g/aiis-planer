@@ -44,6 +44,7 @@ import {
   parseWiringScheme,
   parseYesNo,
   surveyTiCells,
+  suggestedWiring,
   surveyTiColumns,
   tiStatusLabels,
   wiringLabels,
@@ -80,6 +81,8 @@ const CONNECTED_COLUMN = 15;
 const STATUS_COLUMN = 3;
 /// Колонка «соотв. по справочнику АТС» в surveyTiColumns.
 const ATS_DICTIONARY_COLUMN = 6;
+/// Колонка «схема включения» в surveyTiColumns.
+const WIRING_COLUMN = 7;
 
 /// Статус ТИ в таблице — точкой: серая — в работе, зелёная — готово,
 /// оранжевая — внимание.
@@ -194,6 +197,7 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
             /// проверено», а не старое значение от прежнего типа.
             inAtsDictionary: null,
             atsDictionaryReason: null,
+            atsWiring: null,
           },
         });
         break;
@@ -737,6 +741,22 @@ export function SurveyView({
         ...props,
         title: ti.currentMeter.atsDictionaryReason ?? undefined,
         className: cn(props?.className, 'text-red-600 dark:text-red-400'),
+      };
+    }
+
+    /// Схема не записана и подсказана (по Uном или справочнику АТС) — серым:
+    /// её ещё надо подтвердить. Править ячейку начинают с пустого: подсказка
+    /// не значение.
+    const suggested = col === WIRING_COLUMN && ti ? suggestedWiring(ti) : null;
+
+    if (suggested) {
+      return {
+        ...props,
+        title: suggested.source,
+        className: cn(
+          props?.className,
+          'text-neutral-400 dark:text-neutral-500',
+        ),
       };
     }
 
