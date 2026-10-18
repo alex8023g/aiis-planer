@@ -1,5 +1,6 @@
 import {
   Activity,
+  BookOpen,
   ChevronRight,
   FileText,
   Gavel,
@@ -130,6 +131,13 @@ export default async function HomePage() {
               icon={Activity}
               title='MeterReader'
               description='Проверка снятия показаний и контроль счётчиков'
+            />
+            <SectionLink
+              href='/si-dictionary-ats'
+              icon={BookOpen}
+              title='Справочник СИ АТС'
+              description='Типы и модификации средств измерений из справочника АТС'
+              soon
             />
             {/* Страница пользователей admin-only — как и ссылка на неё. */}
             {user.role === UserRole.Admin && (

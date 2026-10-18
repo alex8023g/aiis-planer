@@ -23,6 +23,7 @@ const pageTitles = {
   letters: 'Регистрация писем',
   warehouse: 'Склад',
   meterreader: 'MeterReader',
+  sidictionaryats: 'Справочник СИ АТС',
 } as const;
 
 /// Шапка приложения. Липкая: список проектов длинный, а меню пользователя
