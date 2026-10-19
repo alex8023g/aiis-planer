@@ -55,7 +55,14 @@ const STATUS_MESSAGES: Readonly<Record<number, string>> = {
 type ChecksumMode = "ks" | "crc";
 type ChecksumOption = ChecksumMode | "auto";
 type DateTime = { year: number; month: number; day: number; hour: number; minute: number };
-export type ConnectionConfig = { host: string; port: number; address: number; password: string };
+export type ConnectionConfig = {
+  host: string;
+  port: number;
+  address: number;
+  password: string;
+  /// Meter type as recorded in the survey, e.g. "Меркурий 230 АМ-03".
+  meterType?: string;
+};
 type PowerMaximum = DateTime & { value: number; rawTimestamp: Buffer };
 type PowerMaxima = {
   morning: PowerMaximum;
@@ -159,7 +166,9 @@ async function loadConnection(path: string): Promise<ConnectionConfig> {
 }
 
 /// Validate raw connection settings (from the config file or the app's database).
-export function parseConnection(raw: { ip: string; port: string; address: string; password?: string }): ConnectionConfig {
+export function parseConnection(
+  raw: { ip: string; port: string; address: string; password?: string; meterType?: string | null },
+): ConnectionConfig {
   const host = raw.ip.trim();
   if (!isIP(host)) throw new MeterReaderError(`Invalid IP address: ${JSON.stringify(raw.ip)}`);
   const port = parseNumber(raw.port, "port");
@@ -172,7 +181,13 @@ export function parseConnection(raw: { ip: string; port: string; address: string
   if (!/^\d{6}$/.test(password)) {
     throw new MeterReaderError("Password must contain exactly six digits");
   }
-  return { host, port, address, password };
+  const meterType = raw.meterType?.trim() || undefined;
+  return { host, port, address, password, meterType };
+}
+
+/// Mercury meters speak a different protocol and are read by meter-reader-merkuriy.
+export function isMerkuriyMeterType(meterType: string | undefined): boolean {
+  return meterType?.toLowerCase().includes("меркурий") ?? false;
 }
 
 function ksChecksum(data: Buffer): number {
@@ -938,7 +953,7 @@ function parsePositiveFloat(value: string, option: string): number {
   return number;
 }
 
-const USAGE = `Usage: node meter_reader.ts [options]
+const USAGE = `Usage: node meter-reader.ts [options]
 
 Read energy registers, meter type/number, historical interval profiles, or
 morning/evening power maxima from a SET-4TM-series meter over TCP.
