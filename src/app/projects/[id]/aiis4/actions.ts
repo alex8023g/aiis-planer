@@ -6,16 +6,19 @@ import { promisify } from 'node:util';
 
 import { refresh } from 'next/cache';
 
+import { EquipmentState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 import { getProject, requireProjectEditor } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import type { ActionResult } from '@/lib/types';
 
 import {
+  isMerkuriyMeterType,
   parseConnection,
   readMeterNumber,
   type MeterNumberReading,
-} from './meter_reader';
+} from './meter-reader';
+import { readMeterNumberMerkuriy } from './meter-reader-merkuriy';
 
 /// Больше разом не добавляем: опечатка в поле («100» вместо «10») иначе
 /// вывалила бы в таблицу сотню пустых строк.
@@ -415,7 +418,7 @@ export type ConnectResult =
   | { ok: true; reading: MeterNumberReading; host: string; port: number }
   | { ok: false; error: string };
 
-/// Опросить счётчик ТИ — то же, что meter_reader --meter-number: заводской
+/// Опросить счётчик ТИ — то же, что meter-reader --meter-number: заводской
 /// номер и дата выпуска. IP — SIM-карты модема группы, адрес — связной адрес
 /// счётчика, порт — свой у ТИ или 6001. Значения берём из базы по id, а не из
 /// браузера: иначе страница могла бы заставить сервер стучаться куда угодно.
@@ -434,6 +437,10 @@ export async function connectMeter(
     where: { id: tiId, projectId },
     select: {
       connection: { select: { meterAddress: true, port: true } },
+      meters: {
+        where: { state: EquipmentState.current },
+        select: { type: true },
+      },
       group: {
         select: {
           modem: { select: { simCard: { select: { ip: true } } } },
@@ -455,8 +462,11 @@ export async function connectMeter(
       ip,
       port: ti.connection?.port || DEFAULT_METER_PORT,
       address,
+      meterType: ti.meters[0]?.type,
     });
-    const reading = await readMeterNumber(config);
+    const reading = isMerkuriyMeterType(config.meterType)
+      ? await readMeterNumberMerkuriy(config)
+      : await readMeterNumber(config);
 
     return { ok: true, reading, host: config.host, port: config.port };
   } catch (error) {
