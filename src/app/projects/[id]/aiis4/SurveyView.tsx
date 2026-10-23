@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import {
   Check,
   ChevronDown,
@@ -641,6 +642,8 @@ export function SurveyView({
       /// выделение. С Ctrl (⌘) клик добавляет строку к выделению или убирает
       /// её оттуда.
       onMouseDown: (event: MouseEvent<HTMLTableCellElement>) => {
+        if (col === SOLUTION_COLUMN && optimisticTis[row]?.group) return;
+
         const clicked = rowAt(event, row);
 
         if (event.ctrlKey || event.metaKey) {
@@ -707,6 +710,21 @@ export function SurveyView({
   function cellProps(row: number, col: number): SurveyCellProps | undefined {
     const props = modeCellProps(row, col);
     const ti = optimisticTis[row];
+
+    if (col === SOLUTION_COLUMN && ti?.group && !editable) {
+      return {
+        ...props,
+        className: cn(props?.className, 'relative'),
+        children: (
+          <Link
+            href={`/projects/${projectId}/ti-groups/${ti.group.id}`}
+            className='absolute inset-0 flex cursor-pointer items-center underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500'
+          >
+            {rows[row][col]?.v ?? ''}
+          </Link>
+        ),
+      };
+    }
 
     /// Статус — точкой вместо текста. Текст остаётся значением ячейки: его
     /// копируют, вставляют и правят, а подпись видна в подсказке.
