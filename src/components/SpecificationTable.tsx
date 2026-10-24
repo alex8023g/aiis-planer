@@ -4,9 +4,16 @@ import { useId, useState, useTransition } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   ArrowDown,
   ArrowUp,
   Check,
+  Package,
   Pencil,
   Plus,
   Trash2,
@@ -19,6 +26,7 @@ import {
 import { equipmentKey } from '@/lib/equipment';
 import type {
   EquipmentKindOption,
+  EquipmentKitOption,
   SpecificationRow,
 } from '@/lib/specification';
 
@@ -54,6 +62,7 @@ export function SpecificationTable({
   title,
   items,
   catalog,
+  kits,
   canEdit,
 }: {
   projectId: string;
@@ -62,6 +71,7 @@ export function SpecificationTable({
   title: string;
   items: SpecificationRow[];
   catalog: EquipmentKindOption[];
+  kits: EquipmentKitOption[];
   canEdit: boolean;
 }) {
   const [drafts, setDrafts] = useState<DraftRow[] | null>(null);
@@ -112,6 +122,57 @@ export function SpecificationTable({
   function add() {
     setDrafts((rows) => [...rows!, { ...EMPTY_DRAFT, key: nextKey }]);
     setNextKey((key) => key + 1);
+  }
+
+  /// Позиции комплекта — в конец черновика. Та же позиция (вид и марка с
+  /// точностью до equipmentKey), что уже есть в черновике, складывается с ней
+  /// по кол-ву, а не встаёт второй строкой: «Кабель питания» из двух
+  /// комплектов — одна строка. Пустые строки черновика — с одной такой
+  /// открывается пустая спецификация — комплект убирает.
+  function addKit(kit: EquipmentKitOption) {
+    const next = drafts!.filter(
+      (row) => row.kind.trim() !== '' || row.model.trim() !== '',
+    );
+    let key = nextKey;
+
+    for (const item of kit.items) {
+      const model = item.model ?? '';
+      const index = next.findIndex(
+        (row) =>
+          equipmentKey(row.kind) === equipmentKey(item.kind) &&
+          equipmentKey(row.model) === equipmentKey(model),
+      );
+
+      if (index < 0) {
+        next.push({
+          key: key++,
+          kind: item.kind,
+          model,
+          quantity: item.quantity === null ? '' : String(item.quantity),
+          unit: '',
+          note: '',
+        });
+        continue;
+      }
+
+      /// Сложить можно только два числа: у позиции без кол-ва или с набранным
+      /// не числом сумма не получится — её оставляем как есть.
+      const current = Number(next[index].quantity);
+
+      if (
+        item.quantity !== null &&
+        next[index].quantity.trim() !== '' &&
+        Number.isInteger(current)
+      ) {
+        next[index] = {
+          ...next[index],
+          quantity: String(current + item.quantity),
+        };
+      }
+    }
+
+    setDrafts(next);
+    setNextKey(key);
   }
 
   function save() {
@@ -316,6 +377,28 @@ export function SpecificationTable({
               <Plus />
               Добавить строку
             </Button>
+            {kits.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button variant='outline' size='sm' disabled={isPending}>
+                      <Package />
+                      Добавить комплект
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent className='w-80'>
+                  {kits.map((kit) => (
+                    <DropdownMenuItem
+                      key={kit.name}
+                      onClick={() => addKit(kit)}
+                    >
+                      <span className='truncate'>{kit.name}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <Button size='sm' disabled={isPending} onClick={save}>
               <Check />
               Сохранить

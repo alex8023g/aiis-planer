@@ -7,6 +7,7 @@ import { SpecificationTable } from '@/components/SpecificationTable';
 import { requireUser } from '@/lib/session';
 import {
   getEquipmentCatalog,
+  getEquipmentKits,
   getGroupSpecification,
 } from '@/lib/specification';
 import { getSurveyTis } from '@/lib/tis';
@@ -26,12 +27,14 @@ export default async function TiGroupPage({
 
   if (!project) notFound();
 
-  const [projects, projectTis, specification, catalog] = await Promise.all([
-    getProjects(user),
-    getSurveyTis(id),
-    getGroupSpecification(id, groupId),
-    getEquipmentCatalog(),
-  ]);
+  const [projects, projectTis, specification, catalog, kits] =
+    await Promise.all([
+      getProjects(user),
+      getSurveyTis(id),
+      getGroupSpecification(id, groupId),
+      getEquipmentCatalog(),
+      getEquipmentKits(),
+    ]);
   const tis = projectTis.filter((ti) => ti.group?.id === groupId);
 
   if (tis.length === 0) notFound();
@@ -83,6 +86,7 @@ export default async function TiGroupPage({
           title='Спецификация'
           items={specification}
           catalog={catalog}
+          kits={kits}
           canEdit={canEditProject(project, user)}
         />
       </main>

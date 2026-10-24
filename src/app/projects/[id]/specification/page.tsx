@@ -7,6 +7,7 @@ import { canEditProject, getProject, getProjects } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import {
   getEquipmentCatalog,
+  getEquipmentKits,
   getProjectSpecification,
   getSpecificationTotals,
 } from '@/lib/specification';
@@ -27,11 +28,12 @@ export default async function SpecificationPage({
 
   if (!project) notFound();
 
-  const [projects, items, totals, catalog] = await Promise.all([
+  const [projects, items, totals, catalog, kits] = await Promise.all([
     getProjects(user),
     getProjectSpecification(id),
     getSpecificationTotals(id),
     getEquipmentCatalog(),
+    getEquipmentKits(),
   ]);
 
   return (
@@ -55,6 +57,7 @@ export default async function SpecificationPage({
           title='Общие позиции проекта'
           items={items}
           catalog={catalog}
+          kits={kits}
           canEdit={canEditProject(project, user)}
         />
         <section className='w-fit max-w-full overflow-x-auto rounded border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900'>

@@ -119,3 +119,69 @@ export async function equipmentIds(
 
   return { kindId: found.id, modelId };
 }
+
+/// Типовые комплекты. Вид и марка — из CATALOG: seedKits идёт после
+/// seedEquipment и с опечаткой падает (см. equipmentIds).
+const KITS: {
+  name: string;
+  items: { kind: string; model: string | null; quantity: number | null }[];
+}[] = [
+  {
+    name: 'Шкаф связи с актив. разветвителем',
+    items: [
+      { kind: 'Шкаф связи', model: 'ЩМП 02 IP54 250х300х155мм', quantity: 1 },
+      { kind: 'Разветвитель RS-485', model: 'R110-R4', quantity: 1 },
+      { kind: 'Блок питания', model: 'MDR-20-12', quantity: 1 },
+      { kind: 'GPRS терминал', model: 'iRZ ATM42.A', quantity: 1 },
+      { kind: 'Антенна', model: 'ЛИДЕР-М 700-2700 МГц', quantity: 1 },
+      { kind: 'Автомат 2х полюсный', model: 'DEKraft 2Р С6А', quantity: 1 },
+      { kind: 'DIN-рейка', model: '07-03-009 7,5х35х250мм', quantity: 1 },
+      { kind: 'Кабель питания', model: 'ВВГнг 2х1.5', quantity: 5 },
+      { kind: 'Интерфейсный кабель', model: 'F/UTP 2x2x0,52 мм', quantity: 5 },
+      {
+        kind: 'Кабель заземления',
+        model: 'ПуГВнг(А)LS желто-зеленый 1х4',
+        quantity: 5,
+      },
+    ],
+  },
+  {
+    name: 'Модем в существующий шкаф',
+    items: [
+      { kind: 'GPRS терминал', model: 'iRZ ATM42.B', quantity: 1 },
+      { kind: 'Антенна', model: 'ЛИДЕР-М 700-2700 МГц', quantity: 1 },
+      { kind: 'Автомат 2х полюсный', model: 'DEKraft 2Р С6А', quantity: 1 },
+      { kind: 'Кабель питания', model: 'ВВГнг 2х1.5', quantity: 1 },
+      { kind: 'Интерфейсный кабель', model: 'F/UTP 2x2x0,52 мм', quantity: 1 },
+    ],
+  },
+];
+
+/// Заводит типовые комплекты, каких ещё нет (по имени). Уже заведённый не
+/// трогает — как и справочник: его могли поправить в приложении.
+export async function seedKits(prisma: PrismaClient): Promise<number> {
+  for (const kit of KITS) {
+    const existing = await prisma.equipmentKit.findUnique({
+      where: { name: kit.name },
+      select: { id: true },
+    });
+
+    if (existing) continue;
+
+    const items = [];
+
+    for (const [position, item] of kit.items.entries()) {
+      items.push({
+        ...(await equipmentIds(prisma, item.kind, item.model)),
+        quantity: item.quantity,
+        position,
+      });
+    }
+
+    await prisma.equipmentKit.create({
+      data: { name: kit.name, items: { createMany: { data: items } } },
+    });
+  }
+
+  return KITS.length;
+}

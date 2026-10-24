@@ -139,3 +139,35 @@ export async function getEquipmentCatalog(): Promise<EquipmentKindOption[]> {
     models: kind.models.map((model) => model.name),
   }));
 }
+
+/// Типовой комплект — для кнопки «Добавить комплект» в редакторе.
+export type EquipmentKitOption = {
+  name: string;
+  items: { kind: string; model: string | null; quantity: number | null }[];
+};
+
+export async function getEquipmentKits(): Promise<EquipmentKitOption[]> {
+  const kits = await prisma.equipmentKit.findMany({
+    orderBy: { name: 'asc' },
+    select: {
+      name: true,
+      items: {
+        orderBy: { position: 'asc' },
+        select: {
+          quantity: true,
+          kind: { select: { name: true } },
+          model: { select: { name: true } },
+        },
+      },
+    },
+  });
+
+  return kits.map((kit) => ({
+    name: kit.name,
+    items: kit.items.map((item) => ({
+      kind: item.kind.name,
+      model: item.model?.name ?? null,
+      quantity: item.quantity,
+    })),
+  }));
+}
