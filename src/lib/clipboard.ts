@@ -2,7 +2,7 @@
 /// http (страница по адресу в локальной сети, а не localhost) его не
 /// существует вовсе — тогда остаётся старый приём со скрытым полем.
 /// execCommand объявлен устаревшим, но работает везде и разрешения не
-/// спрашивает. Тот же приём — в MeasurementPointTable.
+/// спрашивает.
 export async function copyText(text: string): Promise<void> {
   try {
     if (navigator.clipboard) {
