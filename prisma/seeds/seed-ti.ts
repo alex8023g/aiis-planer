@@ -95,6 +95,56 @@ function valueOwner(owners: number[][], row: number, col: number): number {
   return cellValue(owners, row, col) === null ? -1 : (owners[row]?.[col] ?? -1);
 }
 
+/// Демо-спецификация — у первой группы опроса, чтобы на странице группы ТИ
+/// было что показать. В опросе спецификации нет: её составляют позже.
+const DEMO_SPECIFICATION = [
+  {
+    name: 'Шкаф учета с монтажной платой',
+    model: 'ЩМП 02 IP54 250x300x155мм',
+    quantity: 5,
+    unit: 'шт',
+  },
+  { name: 'GPRS терминал', model: 'iRZ ATM42.B', quantity: 5, unit: 'шт' },
+  { name: 'Антенна', model: 'Antey 906 13,5dB SMA', quantity: 5, unit: 'шт' },
+  {
+    name: 'Автомат 2х полюсный 2P C6A',
+    model: 'DEKraft',
+    quantity: 5,
+    unit: 'шт',
+  },
+  {
+    name: 'DIN-рейка 07-03-009 7,5x35x250мм',
+    model: null,
+    quantity: 5,
+    unit: 'шт',
+  },
+  { name: 'Кабель питания', model: 'ВВГнг 2x1.5', quantity: 150, unit: 'м' },
+  {
+    name: 'Интерфейсный кабель',
+    model: 'F/UTP 2x2x0,52 мм',
+    quantity: 150,
+    unit: 'м',
+  },
+  {
+    name: 'кабель заземления',
+    model: 'ПуГВнг(А)LS желто-зеленый 1x4',
+    quantity: 15,
+    unit: 'м',
+  },
+  {
+    name: 'Труба гофрированная ПВХ 20 мм',
+    model: 'ПВХ 20 мм',
+    quantity: 240,
+    unit: 'м',
+  },
+  {
+    name: 'Расходные материалы',
+    model: 'саморезы, клипсы, стяжки, хомуты и т.д.',
+    quantity: 1,
+    unit: 'комп.',
+  },
+];
+
 /// Переносит опрос в базу целиком: ТИ проекта пересоздаются, поэтому seed можно
 /// гонять сколько угодно раз. Счётчики, ТТ и ТН уходят каскадом вместе с ТИ, а
 /// общий текст (опрос и примечания) — вместе с группами ТИ.
@@ -134,6 +184,15 @@ export async function seedTis(
         notes: notes === null ? undefined : { create: { description: notes } },
         /// Модем с SIM-картой заводится с каждой группой — пустым.
         modem: { create: { simCard: { create: {} } } },
+        specification:
+          groups.size === 0
+            ? {
+                create: DEMO_SPECIFICATION.map((item, position) => ({
+                  ...item,
+                  position,
+                })),
+              }
+            : undefined,
       },
       select: { id: true },
     });
