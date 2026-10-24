@@ -5,10 +5,10 @@ import { join } from 'node:path';
 
 import { PrismaPg } from '@prisma/adapter-pg';
 
-import { PrismaClient } from '../src/generated/prisma/client';
-import type { ContractSource } from '../src/generated/prisma/enums';
+import { PrismaClient } from '../../src/generated/prisma/client';
+import type { ContractSource } from '../../src/generated/prisma/enums';
 
-/// Форма строки из prisma/data/contracts-2026.json — её готовит
+/// Форма строки из prisma/seeds/data/contracts-2026.json — её готовит
 /// scripts/extract_contracts.py, разбирая три реестра .xlsx/.xlsb.
 type StageRow = {
   no: number;

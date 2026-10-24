@@ -2,16 +2,16 @@ import 'dotenv/config';
 
 import { PrismaPg } from '@prisma/adapter-pg';
 
-import { PrismaClient } from '../src/generated/prisma/client';
-import type { StageKind, SubtaskKey } from '../src/generated/prisma/enums';
-import { parseEmailList } from '../src/lib/emails';
+import { PrismaClient } from '../../src/generated/prisma/client';
+import type { StageKind, SubtaskKey } from '../../src/generated/prisma/enums';
+import { parseEmailList } from '../../src/lib/emails';
 import { seedTis } from './seed-ti';
 import {
   TaskStatus,
   UserRole,
   type Project,
   type Stage,
-} from '../src/lib/types';
+} from '../../src/lib/types';
 
 /// Список доступа у демо-проектов один на всех, поэтому задаётся не здесь,
 /// а в seedMembers().
