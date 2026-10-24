@@ -14,7 +14,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "db:seed:pemz": "tsx prisma/seed-pemz.ts",
+    "db:seed:pemz": "tsx prisma/seeds/seed-pemz.ts",
     "db:studio": "prisma studio"
   },
   "dependencies": {

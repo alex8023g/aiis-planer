@@ -72,18 +72,6 @@ export default async function ProjectPage({
 
         <section className='rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6 dark:border-neutral-800 dark:bg-neutral-900'>
           <div className='flex flex-wrap items-center justify-between gap-3'>
-            <h2 className='text-lg font-semibold tracking-tight'>АИИС</h2>
-            <Link
-              href={`/projects/${project.id}/aiis`}
-              className={buttonVariants({ variant: 'outline', size: 'sm' })}
-            >
-              {canEdit ? 'Заполнить' : 'Открыть'}
-            </Link>
-          </div>
-        </section>
-
-        <section className='rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6 dark:border-neutral-800 dark:bg-neutral-900'>
-          <div className='flex flex-wrap items-center justify-between gap-3'>
             <h2 className='text-lg font-semibold tracking-tight'>АИИС 2</h2>
             <Link
               href={`/projects/${project.id}/aiis2`}

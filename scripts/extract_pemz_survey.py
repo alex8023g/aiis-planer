@@ -1,4 +1,4 @@
-"""Выгружает опрос ПЭМЗ из .xlsx в prisma/data/pemz-survey.json для seed-pemz.ts.
+"""Выгружает опрос ПЭМЗ из .xlsx в prisma/seeds/data/pemz-survey.json для seed-pemz.ts.
 
 Только стандартная библиотека: .xlsx — это zip с XML, а ради одного листа
 тащить openpyxl незачем. Значения ячеек выгружаются как есть, строками;
@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "docs" / "excel_examples" / "АИИС ПЭМЗ.xlsx"
-TARGET = ROOT / "prisma" / "data" / "pemz-survey.json"
+TARGET = ROOT / "prisma" / "seeds" / "data" / "pemz-survey.json"
 
 NS = {
     "m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",

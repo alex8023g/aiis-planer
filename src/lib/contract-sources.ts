@@ -19,7 +19,7 @@ export const contractSources = Object.keys(
 export const REGISTRY_YEAR = 2026;
 
 /// Лист-метка для договоров, заведённых руками. Импорт реестра делает upsert по
-/// ключу [source, registryYear, sourceSheet, sourceRow] (см. prisma/seed-contracts.ts),
+/// ключу [source, registryYear, sourceSheet, sourceRow] (см. prisma/seeds/seed-contracts.ts),
 /// и такого имени листа в .xlsx нет — значит, перезаливка ручные строки не
 /// затрёт и в свою нумерацию не влезет.
 export const MANUAL_SHEET = 'вручную';

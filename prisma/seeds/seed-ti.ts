@@ -1,9 +1,9 @@
 import {
   surveyRows,
   type SurveyCell,
-} from '../src/app/projects/[id]/aiis2/survey-data';
-import type { PrismaClient } from '../src/generated/prisma/client';
-import { EquipmentState } from '../src/generated/prisma/enums';
+} from '../../src/app/projects/[id]/aiis2/survey-data';
+import type { PrismaClient } from '../../src/generated/prisma/client';
+import { EquipmentState } from '../../src/generated/prisma/enums';
 
 /// Колонки опроса — индексы в строке surveyRows. Трёх колонок здесь нет:
 /// «место установки», «г/в» и «тех. решение» переносить некуда, полей под них

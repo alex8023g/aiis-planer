@@ -5,23 +5,23 @@ import { join } from 'node:path';
 
 import { PrismaPg } from '@prisma/adapter-pg';
 
-import { PrismaClient } from '../src/generated/prisma/client';
+import { PrismaClient } from '../../src/generated/prisma/client';
 import {
   EquipmentState,
   ModemKind,
   VoltageClass,
   WiringScheme,
-} from '../src/generated/prisma/enums';
+} from '../../src/generated/prisma/enums';
 
 /// Опрос ПЭМЗ в базу: ТИ проекта «ПЭМЗ» пересоздаются из
-/// prisma/data/pemz-survey.json — его готовит scripts/extract_pemz_survey.py
+/// prisma/seeds/data/pemz-survey.json — его готовит scripts/extract_pemz_survey.py
 /// из docs/excel_examples/АИИС ПЭМЗ.xlsx. Гонять можно сколько угодно раз.
 ///
 /// Запуск: npm run db:seed:pemz
 
 const PROJECT_NAME = 'ПЭМЗ';
 
-/// Форма prisma/data/pemz-survey.json. Ячейки — текст как в книге, без
+/// Форма prisma/seeds/data/pemz-survey.json. Ячейки — текст как в книге, без
 /// разбора; пустая ячейка — null.
 type Survey = {
   header: (string | null)[];
