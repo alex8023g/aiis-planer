@@ -3,12 +3,15 @@ import { notFound } from 'next/navigation';
 import { AiisProjectSwitcher } from '@/components/AiisProjectSwitcher';
 import { Header } from '@/components/Header';
 import { canEditProject, getProject, getProjects } from '@/lib/projects';
+import { SpecificationTable } from '@/components/SpecificationTable';
 import { requireUser } from '@/lib/session';
-import { getGroupSpecification } from '@/lib/specification';
+import {
+  getEquipmentCatalog,
+  getGroupSpecification,
+} from '@/lib/specification';
 import { getSurveyTis } from '@/lib/tis';
 
 import { TiGroupTable } from './GroupTable';
-import { SpecificationTable } from './SpecificationTable';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,10 +26,11 @@ export default async function TiGroupPage({
 
   if (!project) notFound();
 
-  const [projects, projectTis, specification] = await Promise.all([
+  const [projects, projectTis, specification, catalog] = await Promise.all([
     getProjects(user),
     getSurveyTis(id),
     getGroupSpecification(id, groupId),
+    getEquipmentCatalog(),
   ]);
   const tis = projectTis.filter((ti) => ti.group?.id === groupId);
 
@@ -76,7 +80,9 @@ export default async function TiGroupPage({
         <SpecificationTable
           projectId={id}
           groupId={groupId}
+          title='Спецификация'
           items={specification}
+          catalog={catalog}
           canEdit={canEditProject(project, user)}
         />
       </main>

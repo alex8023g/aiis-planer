@@ -4,6 +4,7 @@ import {
 } from '../../src/app/projects/[id]/aiis2/survey-data';
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import { EquipmentState } from '../../src/generated/prisma/enums';
+import { equipmentIds } from './seed-equipment';
 
 /// Колонки опроса — индексы в строке surveyRows. Трёх колонок здесь нет:
 /// «место установки», «г/в» и «тех. решение» переносить некуда, полей под них
@@ -95,55 +96,66 @@ function valueOwner(owners: number[][], row: number, col: number): number {
   return cellValue(owners, row, col) === null ? -1 : (owners[row]?.[col] ?? -1);
 }
 
-/// Демо-спецификация — у первой группы опроса, чтобы на странице группы ТИ
-/// было что показать. В опросе спецификации нет: её составляют позже.
-const DEMO_SPECIFICATION = [
+/// Демо-спецификация первой группы опроса — раздел «ОРУ-110» из спецификации
+/// МЛЗ, чтобы на странице группы ТИ было что показать. В опросе спецификации
+/// нет: её составляют позже. Вид и марка — из справочника (seed-equipment.ts).
+const DEMO_SPECIFICATION: {
+  kind: string;
+  model: string | null;
+  quantity: number | null;
+  note?: string;
+}[] = [
   {
-    name: 'Шкаф учета с монтажной платой',
-    model: 'ЩМП 02 IP54 250x300x155мм',
-    quantity: 5,
-    unit: 'шт',
-  },
-  { name: 'GPRS терминал', model: 'iRZ ATM42.B', quantity: 5, unit: 'шт' },
-  { name: 'Антенна', model: 'Antey 906 13,5dB SMA', quantity: 5, unit: 'шт' },
-  {
-    name: 'Автомат 2х полюсный 2P C6A',
-    model: 'DEKraft',
-    quantity: 5,
-    unit: 'шт',
-  },
-  {
-    name: 'DIN-рейка 07-03-009 7,5x35x250мм',
-    model: null,
-    quantity: 5,
-    unit: 'шт',
-  },
-  { name: 'Кабель питания', model: 'ВВГнг 2x1.5', quantity: 150, unit: 'м' },
-  {
-    name: 'Интерфейсный кабель',
-    model: 'F/UTP 2x2x0,52 мм',
-    quantity: 150,
-    unit: 'м',
-  },
-  {
-    name: 'кабель заземления',
-    model: 'ПуГВнг(А)LS желто-зеленый 1x4',
-    quantity: 15,
-    unit: 'м',
-  },
-  {
-    name: 'Труба гофрированная ПВХ 20 мм',
-    model: 'ПВХ 20 мм',
-    quantity: 240,
-    unit: 'м',
-  },
-  {
-    name: 'Расходные материалы',
-    model: 'саморезы, клипсы, стяжки, хомуты и т.д.',
+    kind: 'Шкаф связи',
+    model: 'ЩМП 02 IP54 250х300х155мм',
     quantity: 1,
-    unit: 'комп.',
+    note: 'если интерфейсные кабели не заведены в шкаф в ЗРУ-10',
+  },
+  { kind: 'Разветвитель RS-485', model: 'R110-R4', quantity: 1 },
+  { kind: 'Блок питания', model: 'MDR-20-12', quantity: 1 },
+  { kind: 'GPRS терминал', model: 'iRZ ATM42.A', quantity: 1 },
+  { kind: 'Антенна', model: 'ЛИДЕР-М 700-2700 МГц', quantity: 1 },
+  { kind: 'Автомат 2х полюсный', model: 'DEKraft 2Р С6А', quantity: 1 },
+  { kind: 'DIN-рейка', model: '07-03-009 7,5х35х250мм', quantity: 1 },
+  { kind: 'Кабель питания', model: 'ВВГнг 2х1.5', quantity: 5 },
+  { kind: 'Интерфейсный кабель', model: 'F/UTP 2x2x0,52 мм', quantity: 5 },
+  {
+    kind: 'Кабель заземления',
+    model: 'ПуГВнг(А)LS желто-зеленый 1х4',
+    quantity: 5,
+  },
+  /// Без кол-ва, как в книге: итог проекта покажет его неполным.
+  { kind: 'Кабель для вторичных цепей', model: null, quantity: null },
+];
+
+/// Общие позиции проекта — без группы, как в книге МЛЗ.
+const PROJECT_SPECIFICATION: typeof DEMO_SPECIFICATION = [
+  {
+    kind: 'Расходные материалы',
+    model: 'саморезы, клипсы, стяжки, хомуты и т.д.',
+    quantity: 12,
   },
 ];
+
+async function seedSpecification(
+  prisma: PrismaClient,
+  projectId: string,
+  groupId: string | null,
+  items: typeof DEMO_SPECIFICATION,
+): Promise<void> {
+  for (const [position, item] of items.entries()) {
+    await prisma.specificationItem.create({
+      data: {
+        projectId,
+        groupId,
+        ...(await equipmentIds(prisma, item.kind, item.model)),
+        quantity: item.quantity,
+        note: item.note ?? null,
+        position,
+      },
+    });
+  }
+}
 
 /// Переносит опрос в базу целиком: ТИ проекта пересоздаются, поэтому seed можно
 /// гонять сколько угодно раз. Счётчики, ТТ и ТН уходят каскадом вместе с ТИ, а
@@ -154,6 +166,9 @@ export async function seedTis(
 ): Promise<number> {
   await prisma.ti.deleteMany({ where: { projectId } });
   await prisma.tiGroup.deleteMany({ where: { projectId } });
+  /// Позиции групп ушли с группами каскадом, общие на проект — нет.
+  await prisma.specificationItem.deleteMany({ where: { projectId } });
+  await seedSpecification(prisma, projectId, null, PROJECT_SPECIFICATION);
 
   const owners = resolveOwners(surveyRows);
   /// Группа — сочетание ячеек опроса и примечания, которые ТИ делят. Опрос
@@ -184,18 +199,13 @@ export async function seedTis(
         notes: notes === null ? undefined : { create: { description: notes } },
         /// Модем с SIM-картой заводится с каждой группой — пустым.
         modem: { create: { simCard: { create: {} } } },
-        specification:
-          groups.size === 0
-            ? {
-                create: DEMO_SPECIFICATION.map((item, position) => ({
-                  ...item,
-                  position,
-                })),
-              }
-            : undefined,
       },
       select: { id: true },
     });
+
+    if (groups.size === 0) {
+      await seedSpecification(prisma, projectId, id, DEMO_SPECIFICATION);
+    }
 
     groups.set(key, id);
 

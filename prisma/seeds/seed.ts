@@ -5,6 +5,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../../src/generated/prisma/client';
 import type { StageKind, SubtaskKey } from '../../src/generated/prisma/enums';
 import { parseEmailList } from '../../src/lib/emails';
+import { seedEquipment } from './seed-equipment';
 import { seedTis } from './seed-ti';
 import {
   TaskStatus,
@@ -333,6 +334,10 @@ async function main() {
     await seedProject(project, members);
     console.log(`seeded project ${project.id} (${project.name})`);
   }
+
+  const kinds = await seedEquipment(prisma);
+
+  console.log(`seeded ${kinds} equipment kinds`);
 
   const tis = await seedTis(prisma, 'mlz');
 
