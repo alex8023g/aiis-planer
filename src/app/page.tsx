@@ -6,6 +6,7 @@ import {
   Gavel,
   LayoutList,
   Mail,
+  Package,
   Users,
   Warehouse,
   type LucideIcon,
@@ -138,6 +139,12 @@ export default async function HomePage() {
               title='Справочник СИ АТС'
               description='Типы и модификации средств измерений из справочника АТС'
               soon
+            />
+            <SectionLink
+              href='/equipment-catalog'
+              icon={Package}
+              title='Справочник оборудования'
+              description='Виды, марки и типовые комплекты для спецификаций'
             />
             {/* Страница пользователей admin-only — как и ссылка на неё. */}
             {user.role === UserRole.Admin && (

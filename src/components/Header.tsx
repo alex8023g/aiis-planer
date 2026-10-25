@@ -25,6 +25,7 @@ const pageTitles = {
   meterreader: 'MeterReader',
   specification: 'Спецификация',
   sidictionaryats: 'Справочник СИ АТС',
+  equipmentcatalog: 'Справочник оборудования',
 } as const;
 
 /// Шапка приложения. Липкая: список проектов длинный, а меню пользователя
