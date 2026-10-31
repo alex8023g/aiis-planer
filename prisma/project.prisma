@@ -55,25 +55,27 @@ enum SubtaskKey {
 }
 
 model Project {
-  id          String          @id @default(cuid())
-  name        String
+  id            String              @id @default(cuid())
+  name          String
   /// Дата начала проекта, без времени.
-  dateStart   DateTime        @db.Date
+  dateStart     DateTime            @db.Date
   /// Длительность в днях.
-  duration    Int             @default(0)
-  responsible String?
-  stages      Stage[]
+  duration      Int                 @default(0)
+  responsible   String?
+  stages        Stage[]
   /// Кто из editor'ов может менять этот проект. На видимость список не влияет:
   /// проекты видны всем, кроме pending. Пустого списка не бывает: такой проект
   /// не смог бы изменить ни один editor, только admin.
-  members     ProjectMember[]
+  members       ProjectMember[]
   /// Точки измерения из опроса: что стоит на ТИ сейчас и что ставим.
-  tis         Ti[]
+  tis           Ti[]
   /// Группы ТИ проекта: общее оборудование и тексты опроса. Удаляются вместе
   /// с проектом каскадом.
-  tiGroups    TiGroup[]
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  tiGroups      TiGroup[]
+  /// Спецификация проекта: позиции всех групп ТИ и общие на проект.
+  specification SpecificationItem[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 }
 
 /// Доступ к проекту. Хранится почта, а не связь с User, чтобы доступ можно было

@@ -23,7 +23,9 @@ const pageTitles = {
   letters: 'Регистрация писем',
   warehouse: 'Склад',
   meterreader: 'MeterReader',
+  specification: 'Спецификация',
   sidictionaryats: 'Справочник СИ АТС',
+  equipmentcatalog: 'Справочник оборудования',
 } as const;
 
 /// Шапка приложения. Липкая: список проектов длинный, а меню пользователя
@@ -54,7 +56,10 @@ export function Header({
   action?: ReactNode;
 }) {
   const projectsNearHome =
-    current === 'project' || current === 'aiis4' || current === 'meterreader';
+    current === 'project' ||
+    current === 'aiis4' ||
+    current === 'meterreader' ||
+    current === 'specification';
 
   return (
     <header className='sticky top-0 z-10 border-b border-neutral-200 bg-neutral-50/80 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80'>

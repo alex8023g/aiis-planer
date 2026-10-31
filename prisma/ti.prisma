@@ -115,17 +115,18 @@ model Ti {
 /// Группа, из которой ушли все ТИ, остаётся до удаления проекта — убирать её
 /// раньше или нет, решает код, который переносит ТИ.
 model TiGroup {
-  id                String             @id @default(cuid())
+  id                String              @id @default(cuid())
   projectId         String
-  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project           Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
   tis               Ti[]
   uspd              Uspd?
   modem             Modem?
   technicalSolution TechnicalSolution?
   sidePolling       SidePolling?
   notes             TisNotes?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  specification     SpecificationItem[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
 
   @@index([projectId])
 }

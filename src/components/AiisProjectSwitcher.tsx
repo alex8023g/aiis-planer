@@ -22,6 +22,7 @@ type AiisProject = {
 const sections = [
   { slug: 'aiis4', title: 'АИИС 4' },
   { slug: 'meter-reader', title: 'MeterReader' },
+  { slug: 'specification', title: 'Спецификация' },
 ] as const;
 
 type Section = (typeof sections)[number]['slug'];

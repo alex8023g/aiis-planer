@@ -1,0 +1,421 @@
+'use client';
+
+import { useId, useState, useTransition } from 'react';
+
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  Package,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react';
+import {
+  saveSpecification,
+  type SpecificationDraft,
+} from '@/app/projects/[id]/specification/actions';
+import { equipmentKey } from '@/lib/equipment';
+import type {
+  EquipmentKindOption,
+  EquipmentKitOption,
+  SpecificationRow,
+} from '@/lib/specification';
+
+/// Строка черновика: key держит React-ключ стабильным, пока строки
+/// переставляют, — по индексу поля ввода перепутались бы местами.
+type DraftRow = SpecificationDraft & { key: number };
+
+const EMPTY_DRAFT: SpecificationDraft = {
+  kind: '',
+  model: '',
+  quantity: '1',
+  unit: '',
+  note: '',
+};
+
+const INPUT_CLASS =
+  'w-full rounded border border-neutral-300 bg-transparent px-1 py-0.5 focus:border-neutral-500 focus:outline-none dark:border-neutral-700 dark:focus:border-neutral-400';
+
+function toDrafts(items: SpecificationRow[]): DraftRow[] {
+  return items.map((item, index) => ({
+    key: index,
+    kind: item.kind,
+    model: item.model ?? '',
+    quantity: item.quantity === null ? '' : String(item.quantity),
+    unit: item.unit,
+    note: item.note ?? '',
+  }));
+}
+
+export function SpecificationTable({
+  projectId,
+  groupId,
+  title,
+  items,
+  catalog,
+  kits,
+  canEdit,
+}: {
+  projectId: string;
+  /// null — общая спецификация проекта, без группы ТИ.
+  groupId: string | null;
+  title: string;
+  items: SpecificationRow[];
+  catalog: EquipmentKindOption[];
+  kits: EquipmentKitOption[];
+  canEdit: boolean;
+}) {
+  const [drafts, setDrafts] = useState<DraftRow[] | null>(null);
+  const [nextKey, setNextKey] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const listId = useId();
+  const editing = drafts !== null;
+  const kindsByKey = new Map(
+    catalog.map((kind) => [equipmentKey(kind.name), kind]),
+  );
+
+  function startEditing() {
+    const rows = toDrafts(items);
+
+    setDrafts(rows.length > 0 ? rows : [{ ...EMPTY_DRAFT, key: 0 }]);
+    setNextKey(Math.max(rows.length, 1));
+    setError(null);
+  }
+
+  function cancel() {
+    setDrafts(null);
+    setError(null);
+  }
+
+  function change(
+    index: number,
+    field: keyof SpecificationDraft,
+    value: string,
+  ) {
+    setDrafts((rows) =>
+      rows!.map((row, i) => (i === index ? { ...row, [field]: value } : row)),
+    );
+  }
+
+  function move(index: number, by: -1 | 1) {
+    setDrafts((rows) => {
+      const next = [...rows!];
+      [next[index], next[index + by]] = [next[index + by], next[index]];
+      return next;
+    });
+  }
+
+  function remove(index: number) {
+    setDrafts((rows) => rows!.filter((_row, i) => i !== index));
+  }
+
+  function add() {
+    setDrafts((rows) => [...rows!, { ...EMPTY_DRAFT, key: nextKey }]);
+    setNextKey((key) => key + 1);
+  }
+
+  /// Позиции комплекта — в конец черновика. Та же позиция (вид и марка с
+  /// точностью до equipmentKey), что уже есть в черновике, складывается с ней
+  /// по кол-ву, а не встаёт второй строкой: «Кабель питания» из двух
+  /// комплектов — одна строка. Пустые строки черновика — с одной такой
+  /// открывается пустая спецификация — комплект убирает.
+  function addKit(kit: EquipmentKitOption) {
+    const next = drafts!.filter(
+      (row) => row.kind.trim() !== '' || row.model.trim() !== '',
+    );
+    let key = nextKey;
+
+    for (const item of kit.items) {
+      const model = item.model ?? '';
+      const index = next.findIndex(
+        (row) =>
+          equipmentKey(row.kind) === equipmentKey(item.kind) &&
+          equipmentKey(row.model) === equipmentKey(model),
+      );
+
+      if (index < 0) {
+        next.push({
+          key: key++,
+          kind: item.kind,
+          model,
+          quantity: item.quantity === null ? '' : String(item.quantity),
+          unit: '',
+          note: '',
+        });
+        continue;
+      }
+
+      /// Сложить можно только два числа: у позиции без кол-ва или с набранным
+      /// не числом сумма не получится — её оставляем как есть.
+      const current = Number(next[index].quantity);
+
+      if (
+        item.quantity !== null &&
+        next[index].quantity.trim() !== '' &&
+        Number.isInteger(current)
+      ) {
+        next[index] = {
+          ...next[index],
+          quantity: String(current + item.quantity),
+        };
+      }
+    }
+
+    setDrafts(next);
+    setNextKey(key);
+  }
+
+  function save() {
+    startTransition(async () => {
+      const result = await saveSpecification(
+        projectId,
+        groupId,
+        drafts!.map(({ kind, model, quantity, unit, note }) => ({
+          kind,
+          model,
+          quantity,
+          unit,
+          note,
+        })),
+      );
+
+      if (result.ok) {
+        setDrafts(null);
+        setError(null);
+      } else {
+        setError(result.error);
+      }
+    });
+  }
+
+  return (
+    <section className='w-fit max-w-full shrink-0 overflow-x-auto rounded border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900'>
+      <div className='mb-2 flex items-center gap-2'>
+        <h2 className='text-sm font-semibold'>{title}</h2>
+        {canEdit && !editing && (
+          <Button variant='ghost' size='xs' onClick={startEditing}>
+            <Pencil />
+            Изменить
+          </Button>
+        )}
+      </div>
+      {!editing && items.length === 0 ? (
+        <p className='text-sm text-neutral-500'>Не указана</p>
+      ) : (
+        <table className='border-collapse text-sm'>
+          <thead className='bg-neutral-100 dark:bg-neutral-800'>
+            <tr>
+              <th className='w-16 px-2 py-1 text-center font-medium'>№ п/п</th>
+              <th className='px-2 py-1 text-left font-medium'>
+                Наименование оборудования
+              </th>
+              <th className='px-2 py-1 text-left font-medium'>Марка</th>
+              <th className='w-24 px-2 py-1 text-center font-medium'>Кол-во</th>
+              <th className='w-24 px-2 py-1 text-center font-medium'>
+                Ед. изм.
+              </th>
+              <th className='px-2 py-1 text-left font-medium'>Примечание</th>
+              {editing && <th className='w-24' />}
+            </tr>
+          </thead>
+          <tbody>
+            {editing
+              ? drafts.map((row, index) => {
+                  const kind = kindsByKey.get(equipmentKey(row.kind));
+                  const label = `строка ${index + 1}`;
+
+                  return (
+                    <tr
+                      key={row.key}
+                      className='border-t border-neutral-200 dark:border-neutral-800'
+                    >
+                      <td className='px-2 py-1 text-center'>{index + 1}</td>
+                      <td className='px-2 py-1'>
+                        <input
+                          aria-label={`Наименование, ${label}`}
+                          list={`${listId}-kinds`}
+                          value={row.kind}
+                          disabled={isPending}
+                          onChange={(event) =>
+                            change(index, 'kind', event.target.value)
+                          }
+                          className={`${INPUT_CLASS} min-w-56`}
+                        />
+                      </td>
+                      <td className='px-2 py-1'>
+                        <input
+                          aria-label={`Марка, ${label}`}
+                          list={`${listId}-models-${row.key}`}
+                          value={row.model}
+                          disabled={isPending}
+                          onChange={(event) =>
+                            change(index, 'model', event.target.value)
+                          }
+                          className={`${INPUT_CLASS} min-w-48`}
+                        />
+                        <datalist id={`${listId}-models-${row.key}`}>
+                          {kind?.models.map((model) => (
+                            <option key={model} value={model} />
+                          ))}
+                        </datalist>
+                      </td>
+                      <td className='px-2 py-1'>
+                        <input
+                          aria-label={`Кол-во, ${label}`}
+                          inputMode='numeric'
+                          value={row.quantity}
+                          disabled={isPending}
+                          onChange={(event) =>
+                            change(index, 'quantity', event.target.value)
+                          }
+                          className={`${INPUT_CLASS} text-center`}
+                        />
+                      </td>
+                      <td className='px-2 py-1 text-center'>
+                        {/* У заведённого вида ед. изм. своя — её показывают,
+                            а не правят. Поле — только у нового вида. */}
+                        {kind ? (
+                          kind.unit
+                        ) : (
+                          <input
+                            aria-label={`Ед. изм., ${label}`}
+                            placeholder='шт'
+                            value={row.unit}
+                            disabled={isPending}
+                            onChange={(event) =>
+                              change(index, 'unit', event.target.value)
+                            }
+                            className={`${INPUT_CLASS} text-center`}
+                          />
+                        )}
+                      </td>
+                      <td className='px-2 py-1'>
+                        <input
+                          aria-label={`Примечание, ${label}`}
+                          value={row.note}
+                          disabled={isPending}
+                          onChange={(event) =>
+                            change(index, 'note', event.target.value)
+                          }
+                          className={`${INPUT_CLASS} min-w-40`}
+                        />
+                      </td>
+                      <td className='px-1 py-1 whitespace-nowrap'>
+                        <Button
+                          variant='ghost'
+                          size='icon-xs'
+                          aria-label='Выше'
+                          disabled={isPending || index === 0}
+                          onClick={() => move(index, -1)}
+                        >
+                          <ArrowUp />
+                        </Button>
+                        <Button
+                          variant='ghost'
+                          size='icon-xs'
+                          aria-label='Ниже'
+                          disabled={isPending || index === drafts.length - 1}
+                          onClick={() => move(index, 1)}
+                        >
+                          <ArrowDown />
+                        </Button>
+                        <Button
+                          variant='ghost'
+                          size='icon-xs'
+                          aria-label='Удалить строку'
+                          disabled={isPending}
+                          onClick={() => remove(index)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })
+              : items.map((item, index) => (
+                  <tr
+                    key={item.id}
+                    className='border-t border-neutral-200 dark:border-neutral-800'
+                  >
+                    <td className='px-2 py-1 text-center'>{index + 1}</td>
+                    <td className='px-2 py-1'>{item.kind}</td>
+                    <td className='px-2 py-1'>{item.model ?? '—'}</td>
+                    <td className='px-2 py-1 text-center'>
+                      {item.quantity ?? '—'}
+                    </td>
+                    <td className='px-2 py-1 text-center'>{item.unit}</td>
+                    <td className='px-2 py-1'>{item.note}</td>
+                  </tr>
+                ))}
+          </tbody>
+        </table>
+      )}
+      {editing && (
+        <>
+          <datalist id={`${listId}-kinds`}>
+            {catalog.map((kind) => (
+              <option key={kind.name} value={kind.name} />
+            ))}
+          </datalist>
+          <div className='mt-2 flex flex-wrap items-center gap-2'>
+            <Button
+              variant='outline'
+              size='sm'
+              disabled={isPending}
+              onClick={add}
+            >
+              <Plus />
+              Добавить строку
+            </Button>
+            {kits.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button variant='outline' size='sm' disabled={isPending}>
+                      <Package />
+                      Добавить комплект
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent className='w-80'>
+                  {kits.map((kit) => (
+                    <DropdownMenuItem
+                      key={kit.name}
+                      onClick={() => addKit(kit)}
+                    >
+                      <span className='truncate'>{kit.name}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            <Button size='sm' disabled={isPending} onClick={save}>
+              <Check />
+              Сохранить
+            </Button>
+            <Button
+              variant='ghost'
+              size='sm'
+              disabled={isPending}
+              onClick={cancel}
+            >
+              <X />
+              Отмена
+            </Button>
+            {error && <p className='text-xs text-red-600'>{error}</p>}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
