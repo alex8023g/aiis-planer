@@ -6,6 +6,7 @@ import { EquipmentState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 import { getProject, requireProjectEditor } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
+import { getMeterDictionaryChecker } from '@/lib/siDictionaryMatch';
 import {
   invalidValueError,
   parseTiStatus,
@@ -126,9 +127,12 @@ export async function readMeterProfileForTi(
 /// SIM-карте модема группы,
 /// тех. решение — в TechnicalSolution группы, тип ПУ и замена — в счётчиках
 /// ТИ, что стоит сейчас и что ставим (заводятся при первой записи),
-/// «требуется замена» — обратным к соответствию требованиям у того, что стоит. Модем и
-/// решение общие на группу, поэтому правка у одной ТИ меняет их у всей
-/// группы.
+/// «требуется замена» — у того, что стоит. Модем и решение общие на группу,
+/// поэтому правка у одной ТИ меняет их у всей группы.
+///
+/// Записанный тип ПУ сам решает «требуется замену», пока её не решили
+/// (null): годится тип по справочнику СИ АТС — «нет», не годится или его там
+/// нет — «да». Решённое уже не трогаем: его могли поставить руками.
 export async function updateMeterReaderCells(
   projectId: string,
   edits: MeterReaderEdit[],
@@ -155,6 +159,14 @@ export async function updateMeterReaderCells(
   }
 
   const ids = [...new Set(edits.map((edit) => edit.tiId))];
+  /// Справочник читается целиком (~3K строк) — только когда пишут тип ПУ.
+  /// Пустой (ещё не загружали) ничего не решает: по нему не годился бы ни
+  /// один счётчик.
+  const checkMeter =
+    edits.some((edit) => edit.field === 'meterType' && edit.value.trim()) &&
+    (await prisma.atsMeterModification.count()) > 0
+      ? await getMeterDictionaryChecker()
+      : null;
 
   /// Одной транзакцией: вставка либо ложится целиком, либо не ложится вовсе
   /// — половина вставленного блока хуже, чем ничего.
@@ -211,16 +223,15 @@ export async function updateMeterReaderCells(
 
         await tx.ti.update({ where: { id: tiId }, data: { freeRs485 } });
       } else if (field === 'needsReplacement') {
-        /// «Требуется замена» — обратное к «соответствует требованиям»;
-        /// пустое — «не выяснили», null.
-        const needs = parseYesNo(value)!;
-        const isCompliant = needs === null ? null : !needs;
+        /// «Требуется замена» — у счётчика, что стоит сейчас; пустое — «не
+        /// решили», null.
+        const needsReplacement = parseYesNo(value)!;
         const state = EquipmentState.current;
 
         await tx.meter.upsert({
           where: { tiId_state: { tiId, state } },
-          create: { tiId, state, isCompliant },
-          update: { isCompliant },
+          create: { tiId, state, needsReplacement },
+          update: { needsReplacement },
         });
       } else if (field === 'existingPolling') {
         await tx.ti.update({
@@ -236,11 +247,24 @@ export async function updateMeterReaderCells(
             ? EquipmentState.current
             : EquipmentState.proposed;
 
-        await tx.meter.upsert({
+        const meter = await tx.meter.upsert({
           where: { tiId_state: { tiId, state } },
           create: { tiId, state, type: nullable },
           update: { type: nullable },
+          select: { needsReplacement: true },
         });
+
+        if (
+          field === 'meterType' &&
+          nullable !== null &&
+          meter.needsReplacement === null &&
+          checkMeter
+        ) {
+          await tx.meter.update({
+            where: { tiId_state: { tiId, state } },
+            data: { needsReplacement: !checkMeter(nullable).ok },
+          });
+        }
       } else if (field === 'technicalSolution') {
         const ti = byId.get(tiId)!;
         const groupId = ti.group?.id;

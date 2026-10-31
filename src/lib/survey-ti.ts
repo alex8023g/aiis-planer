@@ -47,6 +47,9 @@ export type SurveyTi = {
   currentMeter: {
     type: string | null;
     isCompliant: boolean | null;
+    /// Требуется ли замена — решение по ТИ; какую марку ставим — в
+    /// proposedMeter. null — ещё не решили.
+    needsReplacement: boolean | null;
     inAtsDictionary: boolean | null;
     /// Почему «нет» — для подсказки в ячейке; null, когда «да» или пусто.
     atsDictionaryReason: string | null;
@@ -79,7 +82,8 @@ export const surveyTiColumns: SurveyColumn[] = [
   { title: 'статус', minWidth: 48, compact: true, resizable: false },
   { title: 'Uном, кВ', minWidth: 80 },
   { title: 'тип ПУ', minWidth: 160 },
-  { title: 'соотв. по справочнику АТС', minWidth: 120 },
+  { title: 'соотв. по справоч АТС', minWidth: 72, compact: true },
+  { title: 'требуется замена сч.', minWidth: 72, compact: true },
   { title: 'схема включения', minWidth: 100 },
   { title: 'сущ. опрос', minWidth: 200 },
   { title: 'свобод. RS-485', minWidth: 100 },
@@ -256,6 +260,7 @@ export function surveyTiCells(
       text(ti.uNom ? voltageClassLabels[ti.uNom] : ''),
       text(ti.currentMeter?.type),
       yesNo(ti.currentMeter?.inAtsDictionary),
+      yesNo(ti.currentMeter?.needsReplacement),
       /// Своя схема не записана — подсказанная (SurveyView красит её серым:
       /// значение подсказано, а не выяснено на опросе).
       text(

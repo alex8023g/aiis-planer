@@ -26,6 +26,7 @@ import {
   type MeterReaderEdit,
   type MeterReaderField,
 } from '@/app/projects/[id]/meter-reader/actions';
+import { CellChoice, type CellChoiceOption } from '@/components/CellChoice';
 import { CellEditor } from '@/components/CellEditor';
 import { SurveyTable, type SurveyCellProps } from '@/components/SurveyTable';
 import { Button } from '@/components/ui/button';
@@ -71,19 +72,19 @@ import { useCellSelection } from './useCellSelection';
 /// переносит его туда. В режиме просмотра клик выделяет строку целиком.
 /// «Соотв. по справочнику АТС» (6) не выделяется: её не правят, она считается
 /// по типу ПУ.
-const SELECTABLE_COLUMNS = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14];
+const SELECTABLE_COLUMNS = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 /// Колонка «тех. решение» в surveyTiColumns.
-const SOLUTION_COLUMN = 10;
+const SOLUTION_COLUMN = 11;
 /// Колонка «IP» в surveyTiColumns.
-const IP_COLUMN = 13;
+const IP_COLUMN = 14;
 /// Колонка «подключён» в surveyTiColumns.
-const CONNECTED_COLUMN = 15;
+const CONNECTED_COLUMN = 16;
 /// Колонка «статус» в surveyTiColumns.
 const STATUS_COLUMN = 3;
-/// Колонка «соотв. по справочнику АТС» в surveyTiColumns.
+/// Колонка «соотв. по справоч АТС» в surveyTiColumns.
 const ATS_DICTIONARY_COLUMN = 6;
 /// Колонка «схема включения» в surveyTiColumns.
-const WIRING_COLUMN = 7;
+const WIRING_COLUMN = 8;
 
 /// Статус ТИ в таблице — точкой: серая — в работе, зелёная — готово,
 /// оранжевая — внимание.
@@ -98,7 +99,7 @@ const tiStatusDotColors: Record<TiStatus, string> = {
 type CheckStatus = { ok: boolean; error?: string };
 /// Колонки, что правятся в режиме правки, и поле под каждой. Тех. решение
 /// и IP — общие на группу (ячейка объединена на группу), остальное — своё у
-/// каждой ТИ. Статус, Uном, схема и RS-485 —
+/// каждой ТИ. Статус, Uном, схема, замена и RS-485 —
 /// перечисления и да/нет: текст ячейки разбирают parse* из survey-ti.
 const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
   1: 'number',
@@ -106,13 +107,24 @@ const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
   3: 'status',
   4: 'uNom',
   5: 'meterType',
-  7: 'wiring',
-  8: 'existingPolling',
-  9: 'freeRs485',
-  10: 'technicalSolution',
-  11: 'proposedMeterType',
-  13: 'ip',
-  14: 'connectAddress',
+  7: 'needsReplacement',
+  8: 'wiring',
+  9: 'existingPolling',
+  10: 'freeRs485',
+  11: 'technicalSolution',
+  12: 'proposedMeterType',
+  14: 'ip',
+  15: 'connectAddress',
+};
+
+/// Поля, значение которых в режиме правки выбирают из списка (CellChoice), а
+/// не набирают. Вставка и Delete работают в них так же, как в остальных.
+const FIELD_CHOICES: Partial<Record<MeterReaderField, CellChoiceOption[]>> = {
+  needsReplacement: [
+    { value: 'да', label: 'да' },
+    { value: 'нет', label: 'нет' },
+    { value: '', label: 'не решили' },
+  ],
 };
 
 /// Значение правимой ячейки так, как его показывает таблица.
@@ -130,6 +142,8 @@ function fieldValue(ti: SurveyTi | undefined, col: number): string {
       return ti.uNom ? voltageClassLabels[ti.uNom] : '';
     case 'meterType':
       return ti.currentMeter?.type ?? '';
+    case 'needsReplacement':
+      return yesNo(ti.currentMeter?.needsReplacement)?.v ?? '';
     case 'wiring':
       return ti.wiring ? wiringLabels[ti.wiring] : '';
     case 'existingPolling':
@@ -166,6 +180,14 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
     if (ti) tiPatches.set(ti.id, { ...tiPatches.get(ti.id), ...patch });
   }
 
+  /// Счётчик с уже сделанными в этой пачке правками: тип и замену могут
+  /// вставить одной пачкой, и вторая правка не должна стереть первую.
+  function currentMeterOf(ti: SurveyTi | undefined) {
+    return ti
+      ? (tiPatches.get(ti.id)?.currentMeter ?? ti.currentMeter)
+      : undefined;
+  }
+
   function patchGroup(tiId: string, patch: GroupPatch) {
     const groupId = groupOf.get(tiId);
 
@@ -192,7 +214,8 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
       case 'meterType':
         patchTi(ti, {
           currentMeter: {
-            isCompliant: ti?.currentMeter?.isCompliant ?? null,
+            isCompliant: currentMeterOf(ti)?.isCompliant ?? null,
+            needsReplacement: currentMeterOf(ti)?.needsReplacement ?? null,
             type: trimmed,
             /// Справочник на клиенте не лежит — до ответа сервера «не
             /// проверено», а не старое значение от прежнего типа.
@@ -227,6 +250,27 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
         const freeRs485 = parseYesNo(value);
 
         if (freeRs485 !== undefined) patchTi(ti, { freeRs485 });
+        break;
+      }
+      case 'needsReplacement': {
+        const needsReplacement = parseYesNo(value);
+        const meter = currentMeterOf(ti);
+
+        /// Счётчика ещё нет — экшен заведёт его без типа: до ответа сервера
+        /// показываем так же.
+        if (needsReplacement !== undefined) {
+          patchTi(ti, {
+            currentMeter: {
+              type: null,
+              isCompliant: null,
+              inAtsDictionary: null,
+              atsDictionaryReason: null,
+              atsWiring: null,
+              ...meter,
+              needsReplacement,
+            },
+          });
+        }
         break;
       }
       case 'existingPolling': {
@@ -501,7 +545,14 @@ export function SurveyView({
 
     if (event.key.length === 1) {
       event.preventDefault();
-      setEditing({ row, col, initial: event.key });
+      /// В ячейке со списком набор открывает список: буква — не значение.
+      setEditing({
+        row,
+        col,
+        initial: FIELD_CHOICES[EDITABLE_COLUMNS[col]!]
+          ? valueAt(row, col)
+          : event.key,
+      });
       return true;
     }
 
@@ -844,6 +895,7 @@ export function SurveyView({
     if (EDITABLE_COLUMNS[col] === undefined) return cellProps;
 
     const isEditing = editing?.row === row && editing.col === col;
+    const choices = FIELD_CHOICES[EDITABLE_COLUMNS[col]!];
 
     return {
       ...cellProps,
@@ -853,10 +905,30 @@ export function SurveyView({
       onDoubleClick: () => {
         if (!isEditing) setEditing({ row, col, initial: valueAt(row, col) });
       },
+      /// Список открывается с одного клика: выбрать из трёх значений проще,
+      /// чем сначала выделить ячейку. Клик с Shift, Ctrl (⌘) — по-прежнему
+      /// выделение, а протяжка мышью по ячейкам click на ячейке не даёт.
+      onClick: (event: MouseEvent<HTMLTableCellElement>) => {
+        if (
+          choices &&
+          !isEditing &&
+          !event.shiftKey &&
+          !event.ctrlKey &&
+          !event.metaKey
+        ) {
+          setEditing({ row, col, initial: valueAt(row, col) });
+        }
+      },
       onPaste: handlePaste,
-      children: isEditing ? (
+      children: !isEditing ? undefined : choices ? (
+        <CellChoice
+          initial={editing.initial}
+          options={choices}
+          onDone={finishEditing}
+        />
+      ) : (
         <CellEditor initial={editing.initial} onDone={finishEditing} />
-      ) : undefined,
+      ),
     };
   }
 
