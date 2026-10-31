@@ -1,0 +1,133 @@
+// Projects and their schedule: stages, subtasks, access list and the
+// working-day calendar used to plan stage dates.
+
+/// Значения совпадают со строками enum TaskStatus в src/lib/types.ts.
+enum TaskStatus {
+  not_started
+  in_progress
+  completed
+}
+
+/// Ключи этапов из типа Stages в src/lib/types.ts.
+enum StageKind {
+  ppo
+  design
+  supply
+  smrPnr
+  poverka
+  algorithm
+  metrology
+}
+
+/// Ключи подзадач всех этапов (см. Stages в src/lib/types.ts).
+enum SubtaskKey {
+  // ppo
+  dogovor
+  dopusk
+  visit
+  summary
+  specification
+  xml20000
+  report
+  // design
+  tz
+  rd
+  td
+  // supply
+  request
+  received
+  assembled
+  sent
+  delivered
+  // smrPnr
+  allWorks
+  // poverka
+  arshin
+  // algorithm
+  collectData
+  sendTask
+  done
+  // metrology
+  documents
+  vniims
+  rosstandart
+  poverkaAiis
+}
+
+model Project {
+  id          String          @id @default(cuid())
+  name        String
+  /// Дата начала проекта, без времени.
+  dateStart   DateTime        @db.Date
+  /// Длительность в днях.
+  duration    Int             @default(0)
+  responsible String?
+  stages      Stage[]
+  /// Кто из editor'ов может менять этот проект. На видимость список не влияет:
+  /// проекты видны всем, кроме pending. Пустого списка не бывает: такой проект
+  /// не смог бы изменить ни один editor, только admin.
+  members     ProjectMember[]
+  /// Точки измерения из опроса: что стоит на ТИ сейчас и что ставим.
+  tis         Ti[]
+  /// Группы ТИ проекта: общее оборудование и тексты опроса. Удаляются вместе
+  /// с проектом каскадом.
+  tiGroups    TiGroup[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+/// Доступ к проекту. Хранится почта, а не связь с User, чтобы доступ можно было
+/// выдать до первого входа человека в приложение.
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Всегда в нижнем регистре: сравнение идёт по точному совпадению.
+  email     String
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, email])
+  @@index([email])
+}
+
+/// Этап проекта. Отсутствие строки = этап не входит в проект (null в Stages).
+model Stage {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  kind      StageKind
+  /// Длительность в днях.
+  duration  Int
+  subtasks  Subtask[]
+
+  /// startAfter: этап начинается после завершения подзадачи другого этапа.
+  startAfterStageId String?
+  startAfterStage   Stage?      @relation("StageDependency", fields: [startAfterStageId], references: [id], onDelete: SetNull)
+  startAfterSubtask SubtaskKey?
+  dependents        Stage[]     @relation("StageDependency")
+
+  @@unique([projectId, kind])
+  @@index([startAfterStageId])
+}
+
+/// Подзадача этапа. status = null — подзадача неприменима к проекту.
+model Subtask {
+  id       String      @id @default(cuid())
+  stageId  String
+  stage    Stage       @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  key      SubtaskKey
+  status   TaskStatus?
+  /// Порядок отображения внутри этапа.
+  position Int
+
+  @@unique([stageId, key])
+}
+
+model IsDayOff {
+  year      Int      @id
+  days      String
+  createdAt DateTime @default(now())
+
+  @@unique([year])
+  @@map("is_day_off")
+}
