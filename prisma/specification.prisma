@@ -1,0 +1,115 @@
+// Equipment catalog (kinds, models, typical kits) and the specification of
+// what goes on each TI group or on the project as a whole.
+
+/// Вид оборудования: GPRS терминал, Антенна, Прибор учета. Справочник общий
+/// на все проекты: позиции спецификации выбирают вид из него, а не пишут
+/// текстом, — иначе итог по проекту развалился бы на «Автомат 2х полюсный» и
+/// «Автомат 2х полюсный » с пробелом.
+model EquipmentKind {
+  id        String              @id @default(cuid())
+  /// Уникально как записано. Набранное чуть иначе — с другим регистром или
+  /// кириллической буквой вместо латинской — узнаёт код (см. equipmentKey в
+  /// src/lib/equipment.ts), а не база.
+  name      String              @unique
+  /// Ед. изм. вида, а не позиции: кабель всегда в метрах, терминал — в штуках.
+  unit      String
+  models    EquipmentModel[]
+  items     SpecificationItem[]
+  kitItems  EquipmentKitItem[]
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+}
+
+/// Марка внутри вида: iRZ ATM42.B у GPRS терминала, ПСЧ-4ТМ.05МД.21 у прибора
+/// учета. Одна и та же марка у разных видов — разные строки.
+model EquipmentModel {
+  id        String              @id @default(cuid())
+  /// Restrict: вид, у которого есть марки, удалять нельзя — марки пришлось бы
+  /// бросить без вида.
+  kindId    String
+  kind      EquipmentKind       @relation(fields: [kindId], references: [id], onDelete: Restrict)
+  /// Уникально внутри вида, как и имя вида: «iRZ ATM42.В» с кириллической В
+  /// узнаёт как ту же марку код, а не база.
+  name      String
+  items     SpecificationItem[]
+  kitItems  EquipmentKitItem[]
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@unique([kindId, name])
+  /// Цель составного ключа позиции спецификации: (марка, её вид).
+  @@unique([id, kindId])
+}
+
+/// Типовой комплект оборудования: «Шкаф связи с актив. разветвителем».
+/// Шаблон для заполнения спецификации: его позиции в спецификацию
+/// копируются, а не ссылаются на комплект, — объекты всё равно отличаются
+/// (то 1, то 3 DIN-рейки), и правка комплекта не должна тихо менять уже
+/// согласованные спецификации.
+model EquipmentKit {
+  id        String             @id @default(cuid())
+  name      String             @unique
+  items     EquipmentKitItem[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+}
+
+/// Позиция комплекта: вид, марка и кол-во — как у позиции спецификации.
+model EquipmentKitItem {
+  id        String          @id @default(cuid())
+  kitId     String
+  kit       EquipmentKit    @relation(fields: [kitId], references: [id], onDelete: Cascade)
+  /// Restrict — как у позиции спецификации: вид и марку, что стоят в
+  /// комплектах, из справочника не удалить.
+  kindId    String
+  kind      EquipmentKind   @relation(fields: [kindId], references: [id], onDelete: Restrict)
+  /// Марка необязательна: бывает, что её выбирают по объекту — счётчик под
+  /// замену. Ключ составной, как у позиции спецификации: марка того же вида.
+  modelId   String?
+  model     EquipmentModel? @relation(fields: [modelId, kindId], references: [id, kindId], onDelete: Restrict)
+  quantity  Int?
+  /// Порядок в комплекте — в том же порядке позиции встают в спецификацию.
+  position  Int
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([kitId])
+  @@index([kindId])
+  @@index([modelId])
+}
+
+/// Позиция спецификации: что и в каком количестве ставим. Висит на группе ТИ,
+/// как и тех. решение, — оборудование общее для всех ТИ группы. Без группы —
+/// позиция проекта целиком (расходные материалы на все объекты).
+model SpecificationItem {
+  id        String          @id @default(cuid())
+  /// Проект есть у каждой позиции, и у групповой тоже: по нему собирают итог
+  /// проекта одним запросом. Что группа из того же проекта, следят на записи.
+  projectId String
+  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  groupId   String?
+  group     TiGroup?        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  /// Restrict: вид и марку, что стоят в спецификациях, из справочника не
+  /// удалить — позиции потеряли бы, что именно ставим.
+  kindId    String
+  kind      EquipmentKind   @relation(fields: [kindId], references: [id], onDelete: Restrict)
+  /// Марка необязательна: бывают позиции без неё — «Кабель для вторичных
+  /// цепей», пока сечение не выбрали. Ключ составной, (modelId, kindId): так
+  /// база сама не даст поставить марку чужого вида. Без марки (modelId null)
+  /// Postgres составной ключ не проверяет, и вид остаётся любым.
+  modelId   String?
+  model     EquipmentModel? @relation(fields: [modelId, kindId], references: [id, kindId], onDelete: Restrict)
+  /// null — «кол-во ещё не посчитали», а не ноль.
+  quantity  Int?
+  /// Примечание к позиции: «нужен низкопрофильный Сч», «со встроенным модемом».
+  note      String?
+  /// Порядок внутри своей спецификации (группы или проекта): задаёт составитель.
+  position  Int
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([projectId])
+  @@index([groupId])
+  @@index([kindId])
+  @@index([modelId])
+}
