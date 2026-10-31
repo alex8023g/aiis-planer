@@ -134,15 +134,18 @@ model TiGroup {
 /// Прибор учёта ТИ. Поля необязательны: у нового счётчика тип и номер
 /// появляются позже, а соответствие требованиям у текущего выясняют не сразу.
 model Meter {
-  id            String         @id @default(cuid())
-  tiId          String
-  ti            Ti             @relation(fields: [tiId], references: [id], onDelete: Cascade)
-  state         EquipmentState
-  type          String?
-  number        String?
-  isCompliant   Boolean?
-  dateInstalled DateTime?      @db.Date
-  dateRemoved   DateTime?      @db.Date
+  id               String         @id @default(cuid())
+  tiId             String
+  ti               Ti             @relation(fields: [tiId], references: [id], onDelete: Cascade)
+  state            EquipmentState
+  type             String?
+  number           String?
+  isCompliant      Boolean?
+  /// Требуется ли замена счётчика: решение, а не марка — какую ставим, пишут
+  /// в type у счётчика с state = proposed. null — ещё не решили.
+  needsReplacement Boolean?
+  dateInstalled    DateTime?      @db.Date
+  dateRemoved      DateTime?      @db.Date
 
   @@unique([tiId, state])
 }
