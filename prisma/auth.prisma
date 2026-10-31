@@ -1,0 +1,84 @@
+// Users and sign-in: the Better Auth models plus the app-wide user role.
+
+/// Роль пользователя во всём приложении. Значения совпадают со строками
+/// enum UserRole в src/lib/types.ts.
+enum UserRole {
+  /// Видит и меняет все проекты, включая те, где его нет в списке доступа.
+  admin
+  /// Меняет проекты, в списке доступа которых есть его почта.
+  editor
+  /// Только просмотр.
+  viewer
+  /// Вошёл, но роль ещё не выдали: не видит и не меняет ничего.
+  pending
+}
+
+/// Модели User/Session/Account/Verification ниже описывает Better Auth.
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?
+  /// Поле поверх схемы Better Auth: он отдаёт его в сессии, потому что оно
+  /// объявлено в additionalFields (см. src/lib/auth.ts).
+  role          UserRole  @default(pending)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  /// Необязательные метаданные; Better Auth не задаёт это поле при создании аккаунта.
+  issuer                String?
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([providerId, accountId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
