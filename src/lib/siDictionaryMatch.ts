@@ -46,14 +46,13 @@ function formatDate(date: Date): string {
 /// modifications that:
 /// - belong to an integral type: it only counts total energy, without
 ///   interval profiles;
-/// - have any stop date (AIIS, ISU, UNION) — even a future one — or are in
-///   the stop list;
+/// - have an AIIS or UNION stop date — even a future one — or are in the
+///   stop list (the ISU stop date doesn't matter for AIIS);
 /// - say in the comment that they don't meet the requirements
 ///   ("Не соответствует техническим требованиям ОРЭМ …").
 function failures(modification: {
   type: { isIntegral: boolean };
   stopDateAiis: Date | null;
-  stopDateIsu: Date | null;
   stopDateUnion: Date | null;
   inStopList: boolean;
   comment: string | null;
@@ -63,9 +62,6 @@ function failures(modification: {
   if (modification.type.isIntegral) reasons.push('Интегральный счётчик');
   if (modification.stopDateAiis) {
     reasons.push(`Стоп-дата АИИС: ${formatDate(modification.stopDateAiis)}`);
-  }
-  if (modification.stopDateIsu) {
-    reasons.push(`Стоп-дата ИСУ: ${formatDate(modification.stopDateIsu)}`);
   }
   if (modification.stopDateUnion) {
     reasons.push(`Стоп-дата UNION: ${formatDate(modification.stopDateUnion)}`);
@@ -122,7 +118,6 @@ export async function getMeterDictionaryChecker(): Promise<
     select: {
       name: true,
       stopDateAiis: true,
-      stopDateIsu: true,
       stopDateUnion: true,
       inStopList: true,
       comment: true,
