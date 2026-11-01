@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 
-import { updateMeterReaderCells } from '../../meter-reader/actions';
+import { updateSurveyCells } from '../../aiis4/actions';
 
 export function ProposedMeterInput({
   projectId,
@@ -21,7 +21,7 @@ export function ProposedMeterInput({
     if (text === value) return;
 
     startTransition(async () => {
-      const result = await updateMeterReaderCells(projectId, [
+      const result = await updateSurveyCells(projectId, [
         { tiId, field: 'proposedMeterType', value: text },
       ]);
 

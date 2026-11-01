@@ -22,11 +22,6 @@ import {
   type MouseEvent,
 } from 'react';
 
-import {
-  updateMeterReaderCells,
-  type MeterReaderEdit,
-  type MeterReaderField,
-} from '@/app/projects/[id]/meter-reader/actions';
 import { CellChoice, type CellChoiceOption } from '@/components/CellChoice';
 import { CellEditor } from '@/components/CellEditor';
 import { SurveyTable, type SurveyCellProps } from '@/components/SurveyTable';
@@ -66,6 +61,9 @@ import {
   type PingResult,
   mergeTiGroups,
   splitTiGroup,
+  updateSurveyCells,
+  type SurveyEdit,
+  type SurveyField,
 } from './actions';
 import { ReplaceMeterDialog } from './ReplaceMeterDialog';
 import { useCellSelection } from './useCellSelection';
@@ -106,7 +104,7 @@ type CheckStatus = { ok: boolean; error?: string };
 /// и IP — общие на группу (ячейка объединена на группу), остальное — своё у
 /// каждой ТИ. Статус, Uном, схема, замена и RS-485 —
 /// перечисления и да/нет: текст ячейки разбирают parse* из survey-ti.
-const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
+const EDITABLE_COLUMNS: Partial<Record<number, SurveyField>> = {
   1: 'number',
   2: 'name',
   3: 'status',
@@ -124,7 +122,7 @@ const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
 
 /// Поля, значение которых в режиме правки выбирают из списка (CellChoice), а
 /// не набирают. Вставка и Delete работают в них так же, как в остальных.
-const FIELD_CHOICES: Partial<Record<MeterReaderField, CellChoiceOption[]>> = {
+const FIELD_CHOICES: Partial<Record<SurveyField, CellChoiceOption[]>> = {
   needsReplacement: [
     { value: 'да', label: 'да' },
     { value: 'нет', label: 'нет' },
@@ -176,7 +174,7 @@ type GroupPatch = {
 /// Решение, IP и вид модема висят на группе, поэтому меняются у всех ТИ
 /// группы сразу; остальное — только у своей ТИ. Нераспознанный текст не
 /// показываем: save его и не отправит.
-function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
+function applyEdits(tis: SurveyTi[], edits: SurveyEdit[]): SurveyTi[] {
   const tiPatches = new Map<string, Partial<SurveyTi>>();
   const groupPatches = new Map<string, GroupPatch>();
   const groupOf = new Map(tis.map((ti) => [ti.id, ti.group?.id]));
@@ -453,7 +451,7 @@ export function SurveyView({
     );
   }
 
-  function save(edits: MeterReaderEdit[]) {
+  function save(edits: SurveyEdit[]) {
     if (edits.length === 0) return;
 
     /// Перечисления и да/нет: нераспознанный текст экшен всё равно
@@ -469,7 +467,7 @@ export function SurveyView({
     /// перехода.
     startSaveTransition(async () => {
       addEdits(edits);
-      const result = await updateMeterReaderCells(projectId, edits);
+      const result = await updateSurveyCells(projectId, edits);
 
       if (!result.ok) setError(result.error);
     });
@@ -501,7 +499,7 @@ export function SurveyView({
   /// Правка ячейки — через её первую ТИ: для IP и решения экшен сам найдёт
   /// группу. «Сущ. опрос» — свой у каждой ТИ, а объединённая ячейка
   /// накрывает ТИ группы с одинаковым текстом: правка — каждой из них.
-  function edit(row: number, col: number, value: string): MeterReaderEdit[] {
+  function edit(row: number, col: number, value: string): SurveyEdit[] {
     const field = EDITABLE_COLUMNS[col]!;
     const span =
       field === 'existingPolling' ? (rows[row][col]?.rowSpan ?? 1) : 1;

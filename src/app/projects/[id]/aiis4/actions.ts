@@ -11,6 +11,15 @@ import { prisma } from '@/lib/prisma';
 import { getProject, requireProjectEditor } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import { getMeterDictionaryChecker } from '@/lib/siDictionaryMatch';
+import { syncMeterSpecification } from '@/lib/specification';
+import {
+  NO_PROPOSED_METER,
+  invalidValueError,
+  parseTiStatus,
+  parseVoltageClass,
+  parseWiringScheme,
+  parseYesNo,
+} from '@/lib/survey-ti';
 import type { ActionResult } from '@/lib/types';
 
 import {
@@ -56,6 +65,262 @@ function isBlankModem(modem: {
     (sim === null ||
       (sim.number === null && sim.ip === null && sim.provider === null))
   );
+}
+
+/// Колонки таблицы опроса, которые можно править.
+export type SurveyField =
+  | 'number'
+  | 'name'
+  | 'status'
+  | 'ip'
+  | 'port'
+  | 'connectAddress'
+  | 'technicalSolution'
+  | 'meterType'
+  | 'uNom'
+  | 'wiring'
+  | 'needsReplacement'
+  | 'existingPolling'
+  | 'freeRs485'
+  | 'proposedMeterType';
+
+export type SurveyEdit = {
+  tiId: string;
+  field: SurveyField;
+  value: string;
+};
+
+const FIELDS = new Set<string>([
+  'number',
+  'name',
+  'status',
+  'ip',
+  'port',
+  'connectAddress',
+  'technicalSolution',
+  'meterType',
+  'uNom',
+  'wiring',
+  'needsReplacement',
+  'existingPolling',
+  'freeRs485',
+  'proposedMeterType',
+]);
+
+/// Больше разом не пишем: вставка целой простыни из буфера по ошибке иначе
+/// переписала бы всю таблицу одним запросом.
+const MAX_EDITS = 2000;
+/// Записать правки ячеек таблицы опроса — одну (правка ячейки) или пачку
+/// (вставка из буфера). Каждое поле живёт в своей таблице:
+/// наименование — в Ti, порт и адрес — в Connection (заводится при первой
+/// записи), Uном, схема, существующий опрос и RS-485 — тоже в Ti, IP — в
+/// SIM-карте модема группы,
+/// тех. решение — в TechnicalSolution группы, тип ПУ и замена — в счётчиках
+/// ТИ, что стоит сейчас и что ставим (заводятся при первой записи),
+/// «требуется замена» — у того, что стоит. Модем и решение общие на группу,
+/// поэтому правка у одной ТИ меняет их у всей группы.
+///
+/// Записанный тип ПУ сам решает «требуется замену», пока её не решили
+/// (null): годится тип по справочнику СИ АТС — «нет», не годится или его там
+/// нет — «да». Решённое уже не трогаем: его могли поставить руками.
+export async function updateSurveyCells(
+  projectId: string,
+  edits: SurveyEdit[],
+): Promise<ActionResult> {
+  const allowed = await requireProjectEditor(projectId);
+  if (!allowed.ok) return allowed;
+
+  if (edits.length === 0) return { ok: true };
+
+  if (edits.length > MAX_EDITS) {
+    return { ok: false, error: `Не больше ${MAX_EDITS} ячеек за раз` };
+  }
+
+  if (edits.some((edit) => !FIELDS.has(edit.field))) {
+    return { ok: false, error: 'Неизвестная колонка' };
+  }
+
+  /// Перечисления и да/нет: текст ячейки должен стать одним из значений,
+  /// иначе вставка целиком не ложится.
+  for (const { field, value } of edits) {
+    const invalid = invalidValueError(field, value);
+
+    if (invalid) return { ok: false, error: invalid };
+  }
+
+  const ids = [...new Set(edits.map((edit) => edit.tiId))];
+  /// Справочник читается целиком (~3K строк) — только когда пишут тип ПУ.
+  /// Пустой (ещё не загружали) ничего не решает: по нему не годился бы ни
+  /// один счётчик.
+  const checkMeter =
+    edits.some((edit) => edit.field === 'meterType' && edit.value.trim()) &&
+    (await prisma.atsMeterModification.count()) > 0
+      ? await getMeterDictionaryChecker()
+      : null;
+
+  /// Одной транзакцией: вставка либо ложится целиком, либо не ложится вовсе
+  /// — половина вставленного блока хуже, чем ничего.
+  const error = await prisma.$transaction(async (tx) => {
+    const tis = await tx.ti.findMany({
+      where: { id: { in: ids }, projectId },
+      select: {
+        id: true,
+        name: true,
+        group: { select: { id: true, modem: { select: { id: true } } } },
+      },
+    });
+
+    /// Чужие или удалённые ТИ: страница могла устареть.
+    if (tis.length !== ids.length) {
+      return 'Часть ТИ не найдена — обновите страницу';
+    }
+
+    const byId = new Map(tis.map((ti) => [ti.id, ti]));
+    /// Группы, где поменялся тип счётчика: их строки «Прибор учета» в
+    /// спецификации пересчитываем (см. syncMeterSpecification).
+    const meterGroups = new Set<string>();
+
+    for (const { tiId, field, value } of edits) {
+      const groupId = byId.get(tiId)!.group?.id;
+
+      if (
+        groupId &&
+        (field === 'meterType' || field === 'proposedMeterType')
+      ) {
+        meterGroups.add(groupId);
+      }
+
+      const trimmed = value.trim();
+      /// Пустое в необязательных полях — «не знаем», то есть null, а не ''.
+      const nullable = trimmed === '' ? null : trimmed;
+
+      if (field === 'number') {
+        await tx.ti.update({ where: { id: tiId }, data: { number: trimmed } });
+      } else if (field === 'name') {
+        await tx.ti.update({ where: { id: tiId }, data: { name: trimmed } });
+      } else if (field === 'port' || field === 'connectAddress') {
+        const data =
+          field === 'port' ? { port: nullable } : { meterAddress: nullable };
+
+        await tx.connection.upsert({
+          where: { tiId },
+          create: { tiId, ...data },
+          update: data,
+        });
+      } else if (field === 'uNom') {
+        /// Разбор уже проверен (invalidValueError) — undefined здесь нет.
+        const uNom = parseVoltageClass(value)!;
+
+        await tx.ti.update({ where: { id: tiId }, data: { uNom } });
+      } else if (field === 'status') {
+        const status = parseTiStatus(value)!;
+
+        await tx.ti.update({ where: { id: tiId }, data: { status } });
+      } else if (field === 'wiring') {
+        const wiring = parseWiringScheme(value)!;
+
+        await tx.ti.update({ where: { id: tiId }, data: { wiring } });
+      } else if (field === 'freeRs485') {
+        const freeRs485 = parseYesNo(value)!;
+
+        await tx.ti.update({ where: { id: tiId }, data: { freeRs485 } });
+      } else if (field === 'needsReplacement') {
+        /// «Требуется замена» — у счётчика, что стоит сейчас; пустое — «не
+        /// решили», null.
+        const needsReplacement = parseYesNo(value)!;
+        const state = EquipmentState.current;
+
+        await tx.meter.upsert({
+          where: { tiId_state: { tiId, state } },
+          create: { tiId, state, needsReplacement },
+          update: { needsReplacement },
+        });
+      } else if (field === 'existingPolling') {
+        await tx.ti.update({
+          where: { id: tiId },
+          data: { existingPolling: nullable },
+        });
+      } else if (
+        field === 'proposedMeterType' &&
+        (nullable === null || nullable === NO_PROPOSED_METER)
+      ) {
+        /// Пустая замена — менять счётчик не будем: новый счётчик удаляем.
+        await tx.meter.deleteMany({
+          where: { tiId, state: EquipmentState.proposed },
+        });
+      } else if (field === 'meterType' || field === 'proposedMeterType') {
+        /// Тип ПУ — у счётчика, что стоит сейчас, замена — у того, что
+        /// ставим. Пустой тип ПУ — null, а сам счётчик остаётся: у него есть
+        /// и другие поля (номер, соответствие требованиям).
+        const state =
+          field === 'meterType'
+            ? EquipmentState.current
+            : EquipmentState.proposed;
+
+        const meter = await tx.meter.upsert({
+          where: { tiId_state: { tiId, state } },
+          create: { tiId, state, type: nullable },
+          update: { type: nullable },
+          select: { needsReplacement: true },
+        });
+
+        if (
+          field === 'meterType' &&
+          nullable !== null &&
+          meter.needsReplacement === null &&
+          checkMeter
+        ) {
+          await tx.meter.update({
+            where: { tiId_state: { tiId, state } },
+            data: { needsReplacement: !checkMeter(nullable).ok },
+          });
+        }
+      } else if (field === 'technicalSolution') {
+        const ti = byId.get(tiId)!;
+        const groupId = ti.group?.id;
+
+        if (!groupId) {
+          return `У ТИ «${ti.name || 'без названия'}» нет группы — тех. решение хранить негде`;
+        }
+
+        /// Описание обязательное: пустое решение — нет решения, строку
+        /// удаляем.
+        if (nullable === null) {
+          await tx.technicalSolution.deleteMany({ where: { groupId } });
+        } else {
+          await tx.technicalSolution.upsert({
+            where: { groupId },
+            create: { groupId, description: nullable },
+            update: { description: nullable },
+          });
+        }
+      } else {
+        const ti = byId.get(tiId)!;
+        const modemId = ti.group?.modem?.id;
+
+        if (!modemId) {
+          return `У ТИ «${ti.name || 'без названия'}» нет модема — IP хранить негде`;
+        }
+
+        await tx.simCard.upsert({
+          where: { modemId },
+          create: { modemId, ip: nullable },
+          update: { ip: nullable },
+        });
+      }
+    }
+
+    await syncMeterSpecification(tx, projectId, meterGroups);
+
+    return null;
+  });
+
+  if (error) return { ok: false, error };
+
+  /// Страница динамическая (force-dynamic) — перерисовать её достаточно.
+  refresh();
+
+  return { ok: true };
 }
 
 /// Добавить count пустых ТИ в конец таблицы опроса. Номера идут подряд за
@@ -165,6 +430,9 @@ export async function mergeTiGroups(
       where: { id: { in: ids } },
       data: { groupId: targetId },
     });
+
+    /// Счётчики ТИ пришли в группу вместе с ТИ — и в её спецификацию.
+    await syncMeterSpecification(tx, projectId, [targetId]);
 
     if (sourceIds.length === 0) return null;
 
@@ -295,15 +563,23 @@ export async function splitTiGroup(
   /// Одной транзакцией: при сбое часть ТИ осталась бы в старой группе, а
   /// часть — в новых.
   await prisma.$transaction(async (tx) => {
+    const groupIds = [groupId];
+
     for (const ti of tis.slice(1)) {
-      await tx.tiGroup.create({
+      const group = await tx.tiGroup.create({
         data: {
           projectId,
           tis: { connect: { id: ti.id } },
           modem: { create: { simCard: { create: {} } } },
         },
+        select: { id: true },
       });
+
+      groupIds.push(group.id);
     }
+
+    /// Счётчики ушедших ТИ уходят из спецификации группы в их новые группы.
+    await syncMeterSpecification(tx, projectId, groupIds);
   });
 
   refresh();
@@ -347,6 +623,9 @@ export async function deleteTis(
       });
     }
 
+    /// Счётчики удалённых ТИ — из спецификации оставшихся групп.
+    await syncMeterSpecification(tx, projectId, groupIds);
+
     return null;
   });
 
@@ -382,6 +661,7 @@ export async function replaceMeter(
   const ti = await prisma.ti.findFirst({
     where: { id: tiId, projectId },
     select: {
+      groupId: true,
       meters: {
         where: {
           state: { in: [EquipmentState.current, EquipmentState.proposed] },
@@ -468,6 +748,12 @@ export async function replaceMeter(
       });
     } else {
       await tx.meter.create({ data: { tiId, ...installed } });
+    }
+
+    /// Поставленный остаётся в спецификации, а заведённый тут новый — в неё
+    /// попадает.
+    if (ti.groupId) {
+      await syncMeterSpecification(tx, projectId, [ti.groupId]);
     }
   });
 
