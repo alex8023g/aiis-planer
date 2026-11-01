@@ -1,0 +1,35 @@
+{
+  "sqltools.connections": [
+    {
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5432,
+      "driver": "PostgreSQL",
+      "name": "postgres.app",
+      "database": "postgres",
+      "username": "postgres"
+    },
+    {
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5432,
+      "driver": "PostgreSQL",
+      "name": "project_4_food",
+      "database": "project_4_food",
+      "username": "postgres"
+    },
+    {
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 5432,
+      "driver": "PostgreSQL",
+      "name": "aiis_planer localhost",
+      "database": "aiis_planer",
+      "username": "postgres",
+      "password": "postgres"
+    }
+  ]
+}
