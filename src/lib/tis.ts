@@ -311,7 +311,13 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
         where: {
           state: { in: [EquipmentState.current, EquipmentState.proposed] },
         },
-        select: { state: true, type: true, isCompliant: true },
+        select: {
+          state: true,
+          type: true,
+          number: true,
+          isCompliant: true,
+          needsReplacement: true,
+        },
       },
       group: {
         select: {
@@ -345,13 +351,17 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
       currentMeter: current
         ? {
             type: current.type,
+            number: current.number,
             isCompliant: current.isCompliant,
+            needsReplacement: current.needsReplacement,
             inAtsDictionary: verdict ? verdict.ok : null,
             atsDictionaryReason: verdict && !verdict.ok ? verdict.reason : null,
             atsWiring: verdict?.wiring ?? null,
           }
         : null,
-      proposedMeter: proposed ? { type: proposed.type } : null,
+      proposedMeter: proposed
+        ? { type: proposed.type, number: proposed.number }
+        : null,
       group: group
         ? {
             id: group.id,

@@ -1,3 +1,6 @@
+import type { Prisma } from '@/generated/prisma/client';
+import { EquipmentState } from '@/generated/prisma/enums';
+import { cleanEquipmentName, equipmentKey } from '@/lib/equipment';
 import { prisma } from '@/lib/prisma';
 
 export type SpecificationRow = {
@@ -170,4 +173,156 @@ export async function getEquipmentKits(): Promise<EquipmentKitOption[]> {
       quantity: item.quantity,
     })),
   }));
+}
+
+/// Вид, под которым счётчики ТИ попадают в спецификацию.
+const METER_KIND = 'Прибор учета';
+
+/// «Нет» и прочерк в типе — «менять не будем», а не марка: из опроса такие
+/// счётчики приходят с типом «нет».
+function isMeterModel(type: string): boolean {
+  return !/^нет(?![а-яё])/i.test(type) && !/^-+$/.test(type);
+}
+
+/// Привести строки «Прибор учета» в спецификациях групп к счётчикам их ТИ:
+/// по строке на марку, кол-во — сколько ТИ группы ставят счётчик этой марки.
+/// Считаются новый счётчик (proposed) и текущий, поставленный заменой
+/// (dateInstalled есть только у них, см. replaceMeter), — поставленный из
+/// спецификации не пропадает.
+///
+/// Строки с маркой ведёт эта функция: кол-во перезаписывается, лишние
+/// удаляются. Строку без марки (заготовку из типового комплекта) занимает
+/// первая марка, остальные такие удаляются — иначе счётчик посчитался бы
+/// дважды. Без счётчиков заготовку не трогаем.
+export async function syncMeterSpecification(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  groupIds: Iterable<string>,
+): Promise<void> {
+  const ids = [...new Set(groupIds)];
+
+  if (ids.length === 0) return;
+
+  const kindKey = equipmentKey(METER_KIND);
+  const kind =
+    (await tx.equipmentKind.findMany({ select: { id: true, name: true } }))
+      .find((item) => equipmentKey(item.name) === kindKey) ??
+    (await tx.equipmentKind.create({
+      data: { name: METER_KIND, unit: 'шт' },
+      select: { id: true, name: true },
+    }));
+  const models = await tx.equipmentModel.findMany({
+    where: { kindId: kind.id },
+    select: { id: true, name: true },
+  });
+  const modelByKey = new Map(
+    models.map((model) => [equipmentKey(model.name), model.id]),
+  );
+
+  const groups = await tx.tiGroup.findMany({
+    where: { id: { in: ids }, projectId },
+    select: {
+      id: true,
+      tis: {
+        select: {
+          meters: {
+            where: {
+              OR: [
+                { state: EquipmentState.proposed },
+                { state: EquipmentState.current, dateInstalled: { not: null } },
+              ],
+            },
+            select: { type: true },
+          },
+        },
+      },
+      specification: {
+        where: { kindId: kind.id },
+        orderBy: { position: 'asc' },
+        select: { id: true, modelId: true },
+      },
+    },
+  });
+
+  for (const group of groups) {
+    /// Кол-во по марке. Марка из справочника, а нет её там — заводим.
+    const counts = new Map<string, number>();
+
+    for (const meter of group.tis.flatMap((ti) => ti.meters)) {
+      const type = meter.type ? cleanEquipmentName(meter.type) : '';
+
+      if (!type || !isMeterModel(type)) continue;
+
+      const key = equipmentKey(type);
+      let modelId = modelByKey.get(key);
+
+      if (!modelId) {
+        modelId = (
+          await tx.equipmentModel.create({
+            data: { kindId: kind.id, name: type },
+            select: { id: true },
+          })
+        ).id;
+        modelByKey.set(key, modelId);
+      }
+
+      counts.set(modelId, (counts.get(modelId) ?? 0) + 1);
+    }
+
+    const placeholders = group.specification.filter((item) => !item.modelId);
+    const pending = new Map(counts);
+
+    for (const item of group.specification) {
+      if (!item.modelId) continue;
+
+      const quantity = pending.get(item.modelId);
+
+      if (quantity === undefined) {
+        await tx.specificationItem.delete({ where: { id: item.id } });
+      } else {
+        await tx.specificationItem.update({
+          where: { id: item.id },
+          data: { quantity },
+        });
+        pending.delete(item.modelId);
+      }
+    }
+
+    if (counts.size > 0) {
+      for (const [index, placeholder] of placeholders.entries()) {
+        const next = pending.entries().next().value;
+
+        if (index === 0 && next) {
+          await tx.specificationItem.update({
+            where: { id: placeholder.id },
+            data: { modelId: next[0], quantity: next[1] },
+          });
+          pending.delete(next[0]);
+        } else {
+          await tx.specificationItem.delete({ where: { id: placeholder.id } });
+        }
+      }
+    }
+
+    if (pending.size === 0) continue;
+
+    const last = await tx.specificationItem.aggregate({
+      where: { projectId, groupId: group.id },
+      _max: { position: true },
+    });
+    let position = (last._max.position ?? -1) + 1;
+
+    for (const [modelId, quantity] of pending) {
+      await tx.specificationItem.create({
+        data: {
+          projectId,
+          groupId: group.id,
+          kindId: kind.id,
+          modelId,
+          quantity,
+          position: position++,
+        },
+      });
+    }
+  }
 }

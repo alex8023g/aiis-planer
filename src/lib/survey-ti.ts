@@ -46,7 +46,12 @@ export type SurveyTi = {
   /// проверен.
   currentMeter: {
     type: string | null;
+    /// Заводской номер.
+    number: string | null;
     isCompliant: boolean | null;
+    /// Требуется ли замена — решение по ТИ; какую марку ставим — в
+    /// proposedMeter. null — ещё не решили.
+    needsReplacement: boolean | null;
     inAtsDictionary: boolean | null;
     /// Почему «нет» — для подсказки в ячейке; null, когда «да» или пусто.
     atsDictionaryReason: string | null;
@@ -55,7 +60,7 @@ export type SurveyTi = {
     atsWiring: DbWiringScheme | null;
   } | null;
   /// Счётчик, который ставим взамен (state = proposed).
-  proposedMeter: { type: string | null } | null;
+  proposedMeter: { type: string | null; number: string | null } | null;
   /// Общее с другими ТИ группы. null — ТИ сама по себе.
   group: {
     id: string;
@@ -79,17 +84,22 @@ export const surveyTiColumns: SurveyColumn[] = [
   { title: 'статус', minWidth: 48, compact: true, resizable: false },
   { title: 'Uном, кВ', minWidth: 80 },
   { title: 'тип ПУ', minWidth: 160 },
-  { title: 'соотв. по справочнику АТС', minWidth: 120 },
+  { title: 'соотв. по справоч АТС', minWidth: 72, compact: true },
+  { title: 'требуется замена сч.', minWidth: 72, compact: true },
   { title: 'схема включения', minWidth: 100 },
+  { title: 'замена сч.', minWidth: 160 },
   { title: 'сущ. опрос', minWidth: 200 },
   { title: 'свобод. RS-485', minWidth: 100 },
   { title: 'тех. решение', minWidth: 320 },
-  { title: 'замена сч.', minWidth: 160 },
   { title: 'опрос', minWidth: 200 },
   { title: 'IP', minWidth: 140 },
   { title: 'адрес счётчика', minWidth: 140 },
   { title: 'подключён', minWidth: 200 },
 ];
+
+/// «Замена сч.» у ТИ без нового счётчика: менять не будем. Вставленный
+/// прочерк — то же, что пустая ячейка.
+export const NO_PROPOSED_METER = '----';
 
 /// Схему включения пишем так же, как в опросе, — сокращением.
 export const wiringLabels: Record<WiringScheme, string> = {
@@ -256,6 +266,7 @@ export function surveyTiCells(
       text(ti.uNom ? voltageClassLabels[ti.uNom] : ''),
       text(ti.currentMeter?.type),
       yesNo(ti.currentMeter?.inAtsDictionary),
+      yesNo(ti.currentMeter?.needsReplacement),
       /// Своя схема не записана — подсказанная (SurveyView красит её серым:
       /// значение подсказано, а не выяснено на опросе).
       text(
@@ -265,10 +276,10 @@ export function surveyTiCells(
             ? wiringLabels[suggested.scheme]
             : '',
       ),
+      text(ti.proposedMeter ? ti.proposedMeter.type : NO_PROPOSED_METER),
       cell(pollingTexts[index], pollingSpans[index]),
       yesNo(ti.freeRs485),
       cell(ti.group?.technicalSolution ?? '', groupSpans[index]),
-      text(ti.proposedMeter?.type),
       cell(modem?.type ?? '', groupSpans[index]),
       /// IP — у модема группы, поэтому объединяется вместе с «опросом».
       cell(modem?.ip ?? '', groupSpans[index]),
