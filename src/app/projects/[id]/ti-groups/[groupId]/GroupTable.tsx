@@ -124,7 +124,7 @@ export function TiGroupTable({
                         <ProposedMeterInput
                           projectId={projectId}
                           tiId={tis[rowIndex].id}
-                          value={cell.v}
+                          value={tis[rowIndex].proposedMeter?.type ?? ''}
                         />
                       ) : (
                         cell.v

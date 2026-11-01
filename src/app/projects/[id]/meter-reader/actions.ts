@@ -8,6 +8,7 @@ import { getProject, requireProjectEditor } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import { getMeterDictionaryChecker } from '@/lib/siDictionaryMatch';
 import {
+  NO_PROPOSED_METER,
   invalidValueError,
   parseTiStatus,
   parseVoltageClass,
@@ -238,10 +239,18 @@ export async function updateMeterReaderCells(
           where: { id: tiId },
           data: { existingPolling: nullable },
         });
+      } else if (
+        field === 'proposedMeterType' &&
+        (nullable === null || nullable === NO_PROPOSED_METER)
+      ) {
+        /// Пустая замена — менять счётчик не будем: новый счётчик удаляем.
+        await tx.meter.deleteMany({
+          where: { tiId, state: EquipmentState.proposed },
+        });
       } else if (field === 'meterType' || field === 'proposedMeterType') {
         /// Тип ПУ — у счётчика, что стоит сейчас, замена — у того, что
-        /// ставим. Пустой тип — null, а сам счётчик остаётся: у него есть и
-        /// другие поля (номер, соответствие требованиям).
+        /// ставим. Пустой тип ПУ — null, а сам счётчик остаётся: у него есть
+        /// и другие поля (номер, соответствие требованиям).
         const state =
           field === 'meterType'
             ? EquipmentState.current

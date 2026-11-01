@@ -40,6 +40,7 @@ import { Input } from '@/components/ui/input';
 import { copyText, parseClipboard } from '@/lib/clipboard';
 import { emptyRow, voltageClassLabels, yesNo } from '@/lib/survey-cells';
 import {
+  NO_PROPOSED_METER,
   invalidValueError,
   parseTiStatus,
   parseVoltageClass,
@@ -74,7 +75,7 @@ import { useCellSelection } from './useCellSelection';
 /// по типу ПУ.
 const SELECTABLE_COLUMNS = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 /// Колонка «тех. решение» в surveyTiColumns.
-const SOLUTION_COLUMN = 11;
+const SOLUTION_COLUMN = 12;
 /// Колонка «IP» в surveyTiColumns.
 const IP_COLUMN = 14;
 /// Колонка «подключён» в surveyTiColumns.
@@ -85,6 +86,8 @@ const STATUS_COLUMN = 3;
 const ATS_DICTIONARY_COLUMN = 6;
 /// Колонка «схема включения» в surveyTiColumns.
 const WIRING_COLUMN = 8;
+/// Колонка «замена сч.» в surveyTiColumns.
+const PROPOSED_METER_COLUMN = 9;
 
 /// Статус ТИ в таблице — точкой: серая — в работе, зелёная — готово,
 /// оранжевая — внимание.
@@ -109,10 +112,10 @@ const EDITABLE_COLUMNS: Partial<Record<number, MeterReaderField>> = {
   5: 'meterType',
   7: 'needsReplacement',
   8: 'wiring',
-  9: 'existingPolling',
-  10: 'freeRs485',
-  11: 'technicalSolution',
-  12: 'proposedMeterType',
+  9: 'proposedMeterType',
+  10: 'existingPolling',
+  11: 'freeRs485',
+  12: 'technicalSolution',
   14: 'ip',
   15: 'connectAddress',
 };
@@ -226,7 +229,10 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
         });
         break;
       case 'proposedMeterType':
-        patchTi(ti, { proposedMeter: { type: trimmed } });
+        patchTi(ti, {
+          proposedMeter:
+            trimmed && trimmed !== NO_PROPOSED_METER ? { type: trimmed } : null,
+        });
         break;
       case 'uNom': {
         const uNom = parseVoltageClass(value);
@@ -810,6 +816,20 @@ export function SurveyView({
         ...props,
         title: ti.currentMeter.atsDictionaryReason ?? undefined,
         className: cn(props?.className, 'text-red-600 dark:text-red-400'),
+      };
+    }
+
+    /// Счётчик менять надо, а на что — не решили: фон оранжевый, пока
+    /// ячейку не выделили (выделение красит свой фон).
+    if (
+      col === PROPOSED_METER_COLUMN &&
+      ti?.currentMeter?.needsReplacement === true &&
+      !ti.proposedMeter &&
+      !props?.['aria-selected']
+    ) {
+      return {
+        ...props,
+        className: cn(props?.className, 'bg-orange-100 dark:bg-orange-950'),
       };
     }
 

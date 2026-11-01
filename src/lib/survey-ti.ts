@@ -85,15 +85,19 @@ export const surveyTiColumns: SurveyColumn[] = [
   { title: 'соотв. по справоч АТС', minWidth: 72, compact: true },
   { title: 'требуется замена сч.', minWidth: 72, compact: true },
   { title: 'схема включения', minWidth: 100 },
+  { title: 'замена сч.', minWidth: 160 },
   { title: 'сущ. опрос', minWidth: 200 },
   { title: 'свобод. RS-485', minWidth: 100 },
   { title: 'тех. решение', minWidth: 320 },
-  { title: 'замена сч.', minWidth: 160 },
   { title: 'опрос', minWidth: 200 },
   { title: 'IP', minWidth: 140 },
   { title: 'адрес счётчика', minWidth: 140 },
   { title: 'подключён', minWidth: 200 },
 ];
+
+/// «Замена сч.» у ТИ без нового счётчика: менять не будем. Вставленный
+/// прочерк — то же, что пустая ячейка.
+export const NO_PROPOSED_METER = '----';
 
 /// Схему включения пишем так же, как в опросе, — сокращением.
 export const wiringLabels: Record<WiringScheme, string> = {
@@ -270,10 +274,10 @@ export function surveyTiCells(
             ? wiringLabels[suggested.scheme]
             : '',
       ),
+      text(ti.proposedMeter ? ti.proposedMeter.type : NO_PROPOSED_METER),
       cell(pollingTexts[index], pollingSpans[index]),
       yesNo(ti.freeRs485),
       cell(ti.group?.technicalSolution ?? '', groupSpans[index]),
-      text(ti.proposedMeter?.type),
       cell(modem?.type ?? '', groupSpans[index]),
       /// IP — у модема группы, поэтому объединяется вместе с «опросом».
       cell(modem?.ip ?? '', groupSpans[index]),
