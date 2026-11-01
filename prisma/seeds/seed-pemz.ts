@@ -228,6 +228,7 @@ async function main() {
             /// опросе, иначе пустой.
             modem: {
               create: {
+                projectId,
                 kind: group.modem ?? undefined,
                 simCard: { create: {} },
               },

@@ -1,5 +1,6 @@
 'use server';
 
+import { EquipmentState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 import { getProject } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
@@ -30,10 +31,15 @@ export async function readMeterProfileForTi(
     where: { id: tiId, projectId },
     select: {
       name: true,
-      connection: { select: { meterAddress: true, port: true } },
+      meters: {
+        where: { state: EquipmentState.current },
+        select: { meterAddress: true },
+      },
       group: {
         select: {
-          modem: { select: { simCard: { select: { ip: true } } } },
+          modem: {
+            select: { port: true, simCard: { select: { ip: true } } },
+          },
         },
       },
     },
@@ -42,7 +48,7 @@ export async function readMeterProfileForTi(
   if (!ti) return { ok: false, error: 'ТИ не найдена — обновите страницу' };
 
   const ip = ti.group?.modem?.simCard?.ip;
-  const address = ti.connection?.meterAddress;
+  const address = ti.meters[0]?.meterAddress;
 
   if (!ip) return { ok: false, error: 'У ТИ не указан IP' };
   if (!address) return { ok: false, error: 'У ТИ не указан адрес счётчика' };
@@ -50,7 +56,7 @@ export async function readMeterProfileForTi(
   try {
     const config = parseConnection({
       ip,
-      port: ti.connection?.port || DEFAULT_METER_PORT,
+      port: ti.group?.modem?.port || DEFAULT_METER_PORT,
       address,
     });
     const reading = await readMeterProfile(config);

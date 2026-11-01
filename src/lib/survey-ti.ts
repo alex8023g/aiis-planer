@@ -36,10 +36,8 @@ export type SurveyTi = {
   /// Существующий опрос — свободный текст, как записали на опросе.
   existingPolling: string | null;
   freeRs485: boolean | null;
-  /// Связной (сетевой) адрес счётчика и порт — из Connection, свои у каждой
-  /// ТИ.
+  /// Связной (сетевой) адрес счётчика, что стоит сейчас.
   meterAddress: string | null;
-  port: string | null;
   /// Счётчик, что стоит сейчас (state = current). inAtsDictionary — есть ли
   /// его тип в справочнике СИ АТС (см. src/lib/siDictionaryMatch.ts);
   /// интегральный счётчик считается «нет». null — тип не записан или ещё не
@@ -70,6 +68,7 @@ export type SurveyTi = {
       /// null — модем заведён с группой, а какой он, ещё не выяснили.
       kind: DbModemKind | null;
       type: string | null;
+      imei: string | null;
       ip: string | null;
     } | null;
   } | null;
@@ -91,7 +90,7 @@ export const surveyTiColumns: SurveyColumn[] = [
   { title: 'сущ. опрос', minWidth: 200 },
   { title: 'свобод. RS-485', minWidth: 100 },
   { title: 'тех. решение', minWidth: 320 },
-  { title: 'опрос', minWidth: 200 },
+  { title: 'IMEI модема', minWidth: 160 },
   { title: 'IP', minWidth: 140 },
   { title: 'адрес счётчика', minWidth: 140 },
   { title: 'подключён', minWidth: 200 },
@@ -100,6 +99,18 @@ export const surveyTiColumns: SurveyColumn[] = [
 /// «Замена сч.» у ТИ без нового счётчика: менять не будем. Вставленный
 /// прочерк — то же, что пустая ячейка.
 export const NO_PROPOSED_METER = '----';
+
+/// «IMEI модема» у встроенного модема без IMEI: модем внутри счётчика, из
+/// свободных модемов проекта его не выбирают.
+export const BUILT_IN_MODEM = 'встроенный';
+
+/// Что показывает ячейка «IMEI модема»: IMEI, а у встроенного модема без
+/// него — BUILT_IN_MODEM.
+export function modemImeiText(
+  modem: { kind: DbModemKind | null; imei: string | null } | null | undefined,
+): string {
+  return modem?.imei ?? (modem?.kind === 'builtIn' ? BUILT_IN_MODEM : '');
+}
 
 /// Схему включения пишем так же, как в опросе, — сокращением.
 export const wiringLabels: Record<WiringScheme, string> = {
@@ -237,11 +248,11 @@ export function surveyTiCells(
   tis: SurveyTi[],
   connected?: ReadonlyMap<string, string>,
 ): SurveyCell[][] {
-  /// «Тех. решение» и «опрос» — общие у всей группы, поэтому объединяем по
-  /// группе, даже когда решения ещё нет: пустая ячейка группы — одно общее
+  /// «Тех. решение» и IMEI модема — общие у всей группы, поэтому объединяем
+  /// по группе, даже когда решения ещё нет: пустая ячейка группы — одно общее
   /// «пока не решили», и заполнят её разом на все ТИ. Так же видно и то, что
   /// ячейки объединили кнопкой «Объединить». Колонки делят одно
-  /// объединение — опрос часть решения, IP — модема из опроса, и строки у них
+  /// объединение — IMEI и IP у модема группы общие, и строки у них
   /// совпадают.
   const groupSpans = spans(tis.map((ti) => ti.group?.id ?? null));
   /// «Сущ. опрос» — свой у каждой ТИ. Объединяем ТИ одной группы, но только
@@ -280,7 +291,7 @@ export function surveyTiCells(
       cell(pollingTexts[index], pollingSpans[index]),
       yesNo(ti.freeRs485),
       cell(ti.group?.technicalSolution ?? '', groupSpans[index]),
-      cell(modem?.type ?? '', groupSpans[index]),
+      cell(modemImeiText(modem), groupSpans[index]),
       /// IP — у модема группы, поэтому объединяется вместе с «опросом».
       cell(modem?.ip ?? '', groupSpans[index]),
       text(ti.meterAddress),

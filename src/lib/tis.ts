@@ -49,7 +49,7 @@ export const tiColumns: SurveyColumn[] = [
 
   { title: 'модем вид', minWidth: 120 },
   { title: 'модем тип', minWidth: 140 },
-  { title: 'модем №', minWidth: 120 },
+  { title: 'модем IMEI', minWidth: 140 },
 
   { title: 'SIM №', minWidth: 140 },
   { title: 'SIM IP', minWidth: 120 },
@@ -125,7 +125,13 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       uNom: true,
       groupId: true,
       meters: {
-        select: { state: true, type: true, number: true, isCompliant: true },
+        select: {
+          state: true,
+          type: true,
+          number: true,
+          isCompliant: true,
+          meterAddress: true,
+        },
       },
       tt: {
         select: {
@@ -149,9 +155,6 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
           ratio: true,
         },
       },
-      connection: {
-        select: { meterAddress: true, port: true, channel: true },
-      },
       group: {
         select: {
           uspd: { select: { type: true, number: true } },
@@ -159,7 +162,9 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
             select: {
               kind: true,
               type: true,
-              number: true,
+              imei: true,
+              port: true,
+              channel: true,
               simCard: { select: { number: true, ip: true, provider: true } },
             },
           },
@@ -231,15 +236,15 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
 
       cell(modem?.kind ? modemKindLabels[modem.kind] : '', modemSpan),
       cell(modem?.type ?? '', modemSpan),
-      cell(modem?.number ?? '', modemSpan),
+      cell(modem?.imei ?? '', modemSpan),
 
       cell(sim?.number ?? '', modemSpan),
       cell(sim?.ip ?? '', modemSpan),
       cell(sim?.provider ?? '', modemSpan),
 
-      text(ti.connection?.meterAddress),
-      text(ti.connection?.port),
-      text(ti.connection ? channelLabels[ti.connection.channel] : ''),
+      text(current?.meterAddress),
+      cell(modem?.port ?? '', modemSpan),
+      cell(modem ? channelLabels[modem.channel] : '', modemSpan),
 
       cell(ti.group?.sidePolling?.description ?? '', pollingSpans[index]),
       cell(ti.group?.notes?.description ?? '', notesSpans[index]),
@@ -270,10 +275,15 @@ export async function getMeterReaderTis(
     select: {
       id: true,
       name: true,
-      connection: { select: { meterAddress: true, port: true } },
+      meters: {
+        where: { state: EquipmentState.current },
+        select: { meterAddress: true },
+      },
       group: {
         select: {
-          modem: { select: { simCard: { select: { ip: true } } } },
+          modem: {
+            select: { port: true, simCard: { select: { ip: true } } },
+          },
         },
       },
     },
@@ -283,9 +293,147 @@ export async function getMeterReaderTis(
     id: ti.id,
     name: ti.name,
     ip: ti.group?.modem?.simCard?.ip ?? null,
-    port: ti.connection?.port ?? null,
-    connectAddress: ti.connection?.meterAddress ?? null,
+    port: ti.group?.modem?.port ?? null,
+    connectAddress: ti.meters[0]?.meterAddress ?? null,
   }));
+}
+
+/// Модем проекта с SIM-картой — строка страницы «Модемы и SIM». Значения
+/// уже подписаны для таблицы: вид и канал — словами.
+export type ProjectModem = {
+  id: string;
+  kind: string;
+  type: string | null;
+  imei: string | null;
+  port: string | null;
+  channel: string;
+  simNumber: string | null;
+  ip: string | null;
+  provider: string | null;
+  /// Номера ТИ группы модема, через запятую. Пусто — модем не привязан к
+  /// группе или в группе нет ТИ.
+  tiNumbers: string;
+};
+
+/// Модемы проекта — в порядке их ТИ в таблице опроса; модемы без ТИ в
+/// конце. Доступ не проверяется, как и в getTiRows.
+export async function getProjectModems(
+  projectId: string,
+): Promise<ProjectModem[]> {
+  const modems = await prisma.modem.findMany({
+    where: { projectId },
+    orderBy: { id: 'asc' },
+    select: {
+      id: true,
+      kind: true,
+      type: true,
+      imei: true,
+      port: true,
+      channel: true,
+      simCard: { select: { number: true, ip: true, provider: true } },
+      group: {
+        select: {
+          tis: {
+            orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+            select: { number: true, position: true },
+          },
+        },
+      },
+    },
+  });
+
+  const firstPosition = (modem: (typeof modems)[number]) =>
+    modem.group?.tis[0]?.position ?? Number.POSITIVE_INFINITY;
+
+  return modems
+    .toSorted((first, second) => firstPosition(first) - firstPosition(second))
+    .map((modem) => ({
+      id: modem.id,
+      kind: modem.kind ? modemKindLabels[modem.kind] : '',
+      type: modem.type,
+      imei: modem.imei,
+      port: modem.port,
+      channel: channelLabels[modem.channel],
+      simNumber: modem.simCard?.number ?? null,
+      ip: modem.simCard?.ip ?? null,
+      provider: modem.simCard?.provider ?? null,
+      tiNumbers: (modem.group?.tis ?? []).map((ti) => ti.number).join(', '),
+    }));
+}
+
+/// IMEI свободных модемов проекта — без группы, с записанным IMEI: из них
+/// выбирают модем группы в таблице опроса. По алфавиту, без повторов.
+export async function getFreeModemImeis(projectId: string): Promise<string[]> {
+  const modems = await prisma.modem.findMany({
+    where: { projectId, groupId: null, imei: { not: null } },
+    orderBy: { imei: 'asc' },
+    distinct: ['imei'],
+    select: { imei: true },
+  });
+
+  return modems.map((modem) => modem.imei!);
+}
+
+/// Что нужно для ПНР по ТИ: счётчик, что стоит сейчас, и модем группы.
+export type PnrTi = {
+  id: string;
+  name: string;
+  meterType: string | null;
+  /// Заводской номер счётчика.
+  meterNumber: string | null;
+  /// Связной (сетевой) адрес счётчика.
+  meterAddress: string | null;
+  /// Модем группы: общий на её ТИ, по нему таблица объединяет их ячейки.
+  /// null — у группы нет модема.
+  modemId: string | null;
+  /// IMEI и IP модема группы: модем общий на группу, поэтому у ТИ одной
+  /// группы они совпадают.
+  modemImei: string | null;
+  ip: string | null;
+};
+
+/// ТИ проекта для ПНР — в том порядке, в котором их записал составитель.
+/// Доступ не проверяется, как и в getTiRows.
+export async function getPnrTis(projectId: string): Promise<PnrTi[]> {
+  const tis = await prisma.ti.findMany({
+    where: { projectId },
+    orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+    select: {
+      id: true,
+      name: true,
+      meters: {
+        where: { state: EquipmentState.current },
+        select: { type: true, number: true, meterAddress: true },
+      },
+      group: {
+        select: {
+          modem: {
+            select: {
+              id: true,
+              imei: true,
+              simCard: { select: { ip: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return tis.map((ti) => {
+    const meter = ti.meters[0];
+    const modem = ti.group?.modem;
+
+    return {
+      id: ti.id,
+      name: ti.name,
+      meterType: meter?.type ?? null,
+      meterNumber: meter?.number ?? null,
+      meterAddress: meter?.meterAddress ?? null,
+      modemId: modem?.id ?? null,
+      modemImei: modem?.imei ?? null,
+      ip: modem?.simCard?.ip ?? null,
+    };
+  });
 }
 
 /// ТИ проекта для таблицы опроса (aiis4) — в том порядке, в котором их
@@ -306,7 +454,6 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
       wiring: true,
       existingPolling: true,
       freeRs485: true,
-      connection: { select: { meterAddress: true, port: true } },
       meters: {
         where: {
           state: { in: [EquipmentState.current, EquipmentState.proposed] },
@@ -317,6 +464,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
           number: true,
           isCompliant: true,
           needsReplacement: true,
+          meterAddress: true,
         },
       },
       group: {
@@ -326,6 +474,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
             select: {
               kind: true,
               type: true,
+              imei: true,
               simCard: { select: { ip: true } },
             },
           },
@@ -335,7 +484,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
     },
   });
 
-  return tis.map(({ meters, group, connection, ...ti }) => {
+  return tis.map(({ meters, group, ...ti }) => {
     const current = meters.find(
       (meter) => meter.state === EquipmentState.current,
     );
@@ -346,8 +495,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
 
     return {
       ...ti,
-      meterAddress: connection?.meterAddress ?? null,
-      port: connection?.port ?? null,
+      meterAddress: current?.meterAddress ?? null,
       currentMeter: current
         ? {
             type: current.type,
@@ -370,6 +518,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
               ? {
                   kind: group.modem.kind,
                   type: group.modem.type,
+                  imei: group.modem.imei,
                   ip: group.modem.simCard?.ip ?? null,
                 }
               : null,

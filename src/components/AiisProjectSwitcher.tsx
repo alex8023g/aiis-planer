@@ -23,6 +23,8 @@ const sections = [
   { slug: 'aiis4', title: 'АИИС 4' },
   { slug: 'meter-reader', title: 'MeterReader' },
   { slug: 'specification', title: 'Спецификация' },
+  { slug: 'pnr', title: 'ПНР' },
+  { slug: 'modem-simcard', title: 'Модемы и SIM' },
 ] as const;
 
 type Section = (typeof sections)[number]['slug'];

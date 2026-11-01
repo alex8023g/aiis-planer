@@ -21,7 +21,7 @@ const VISIBLE_COLUMNS = surveyTiColumns
     ({ column, index }) =>
       index >= FIRST &&
       index < LAST &&
-      !['опрос', 'тех. решение', 'IP', 'адрес счётчика'].includes(
+      !['IMEI модема', 'тех. решение', 'IP', 'адрес счётчика'].includes(
         column.title,
       ),
   );
