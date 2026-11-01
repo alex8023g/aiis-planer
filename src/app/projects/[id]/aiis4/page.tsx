@@ -4,7 +4,7 @@ import { AiisProjectSwitcher } from '@/components/AiisProjectSwitcher';
 import { Header } from '@/components/Header';
 import { canEditProject, getProject, getProjects } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
-import { getSurveyTis } from '@/lib/tis';
+import { getFreeModemImeis, getSurveyTis } from '@/lib/tis';
 
 import { SurveyView } from './SurveyView';
 
@@ -25,9 +25,10 @@ export default async function Aiis4Page({
   /// проект, и «нет проекта» с «нет доступа» отвечают одинаково.
   if (!project) notFound();
 
-  const [projects, tis] = await Promise.all([
+  const [projects, tis, freeModemImeis] = await Promise.all([
     getProjects(user),
     getSurveyTis(id),
+    getFreeModemImeis(id),
   ]);
 
   return (
@@ -50,6 +51,7 @@ export default async function Aiis4Page({
         <SurveyView
           projectId={id}
           tis={tis}
+          freeModemImeis={freeModemImeis}
           canEdit={canEditProject(project, user)}
         />
       </main>

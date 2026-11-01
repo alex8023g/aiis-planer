@@ -72,6 +72,7 @@ model Project {
   /// Группы ТИ проекта: общее оборудование и тексты опроса. Удаляются вместе
   /// с проектом каскадом.
   tiGroups      TiGroup[]
+  modems        Modem[]
   /// Спецификация проекта: позиции всех групп ТИ и общие на проект.
   specification SpecificationItem[]
   createdAt     DateTime            @default(now())

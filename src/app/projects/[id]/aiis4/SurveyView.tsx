@@ -36,8 +36,10 @@ import { Input } from '@/components/ui/input';
 import { copyText, parseClipboard } from '@/lib/clipboard';
 import { emptyRow, voltageClassLabels, yesNo } from '@/lib/survey-cells';
 import {
+  BUILT_IN_MODEM,
   NO_PROPOSED_METER,
   invalidValueError,
+  modemImeiText,
   parseTiStatus,
   parseVoltageClass,
   parseWiringScheme,
@@ -116,6 +118,7 @@ const EDITABLE_COLUMNS: Partial<Record<number, SurveyField>> = {
   10: 'existingPolling',
   11: 'freeRs485',
   12: 'technicalSolution',
+  13: 'modemImei',
   14: 'ip',
   15: 'connectAddress',
 };
@@ -159,6 +162,8 @@ function fieldValue(ti: SurveyTi | undefined, col: number): string {
       return ti.proposedMeter?.type ?? '';
     case 'ip':
       return ti.group?.modem?.ip ?? '';
+    case 'modemImei':
+      return modemImeiText(ti.group?.modem);
     default:
       return ti.meterAddress ?? '';
   }
@@ -167,6 +172,9 @@ function fieldValue(ti: SurveyTi | undefined, col: number): string {
 type GroupPatch = {
   technicalSolution?: string | null;
   ip?: string | null;
+  /// Ячейка «IMEI модема»: другой IMEI — другой модем, BUILT_IN_MODEM —
+  /// встроенный, null — модема нет.
+  imei?: string | null;
   kind?: ModemKind;
 };
 
@@ -293,6 +301,9 @@ function applyEdits(tis: SurveyTi[], edits: SurveyEdit[]): SurveyTi[] {
       case 'ip':
         patchGroup(tiId, { ip: trimmed });
         break;
+      case 'modemImei':
+        patchGroup(tiId, { imei: trimmed });
+        break;
     }
   }
 
@@ -306,8 +317,24 @@ function applyEdits(tis: SurveyTi[], edits: SurveyEdit[]): SurveyTi[] {
     const groupPatch = group ? groupPatches.get(group.id) : undefined;
 
     if (group && groupPatch) {
-      const { technicalSolution, ip, kind } = groupPatch;
-      const modem = group.modem;
+      const { technicalSolution, ip, kind, imei } = groupPatch;
+      let modem = group.modem;
+
+      /// Выбрали другой модем — его вида, типа и IP клиент не знает: пусто,
+      /// пока не ответит сервер.
+      if (imei !== undefined && (imei ?? '') !== modemImeiText(modem)) {
+        modem =
+          imei === null
+            ? null
+            : imei === BUILT_IN_MODEM
+              ? {
+                  kind: 'builtIn',
+                  type: null,
+                  imei: null,
+                  ip: modem?.ip ?? null,
+                }
+              : { kind: null, type: null, imei, ip: null };
+      }
 
       next = {
         ...next,
@@ -338,10 +365,13 @@ const NO_ROW_SELECTION = { rows: new Set<number>(), active: null };
 export function SurveyView({
   projectId,
   tis,
+  freeModemImeis,
   canEdit,
 }: {
   projectId: string;
   tis: SurveyTi[];
+  /// IMEI свободных модемов проекта — варианты для ячейки «IMEI модема».
+  freeModemImeis: string[];
   /// Может ли пользователь менять проект (см. canEditProject). Без права
   /// кнопки нет вовсе: незачем показывать то, что не сработает.
   canEdit: boolean;
@@ -496,6 +526,28 @@ export function SurveyView({
     return fieldValue(optimisticTis[row], col);
   }
 
+  /// Варианты для ячейки со списком; undefined — ячейку набирают. IMEI модема
+  /// выбирают из свободных модемов проекта или «встроенный»; нынешний —
+  /// первым, чтобы было видно, что выбрано, а «без модема» отвязывает модем
+  /// от группы.
+  function choicesAt(row: number, col: number) {
+    const field = EDITABLE_COLUMNS[col];
+
+    if (field !== 'modemImei') return field && FIELD_CHOICES[field];
+
+    const current = valueAt(row, col);
+    const imeis = [
+      ...(current ? [current] : []),
+      BUILT_IN_MODEM,
+      ...freeModemImeis,
+    ];
+
+    return [
+      ...[...new Set(imeis)].map((imei) => ({ value: imei, label: imei })),
+      { value: '', label: 'без модема' },
+    ];
+  }
+
   /// Правка ячейки — через её первую ТИ: для IP и решения экшен сам найдёт
   /// группу. «Сущ. опрос» — свой у каждой ТИ, а объединённая ячейка
   /// накрывает ТИ группы с одинаковым текстом: правка — каждой из них.
@@ -563,9 +615,7 @@ export function SurveyView({
       setEditing({
         row,
         col,
-        initial: FIELD_CHOICES[EDITABLE_COLUMNS[col]!]
-          ? valueAt(row, col)
-          : event.key,
+        initial: choicesAt(row, col) ? valueAt(row, col) : event.key,
       });
       return true;
     }
@@ -923,7 +973,7 @@ export function SurveyView({
     if (EDITABLE_COLUMNS[col] === undefined) return cellProps;
 
     const isEditing = editing?.row === row && editing.col === col;
-    const choices = FIELD_CHOICES[EDITABLE_COLUMNS[col]!];
+    const choices = choicesAt(row, col);
 
     return {
       ...cellProps,

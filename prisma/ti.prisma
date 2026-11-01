@@ -227,22 +227,33 @@ model TechnicalSolution {
 /// ТИ, которые опрашиваются через этот модем, — ТИ его группы.
 /// Заводится вместе с группой — пустым и с пустой SIM-картой: так IP и
 /// прочее можно вписать сразу, не выясняя сперва, какой там модем.
+/// Модем висит на проекте, а группа необязательна: модем с SIM-картой можно
+/// завести заранее (страница «Модемы и SIM») и привязать к группе потом.
+/// Группа должна быть из того же проекта, что и модем: связью это не
+/// выразить, следят на записи.
 model Modem {
-  id      String     @id @default(cuid())
-  groupId String     @unique
-  group   TiGroup    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  id        String     @id @default(cuid())
+  projectId String
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// null — модем ещё не привязан к группе ТИ. Удаление группы уносит и
+  /// модем: опустевшие группы удаляют при объединении, и их пустые модемы
+  /// не должны оседать в проекте.
+  groupId   String?    @unique
+  group     TiGroup?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
   /// null — «ещё не выяснили»: модем заведён с группой, а какой он, пока
   /// неизвестно.
-  kind    ModemKind?
-  type    String?
+  kind      ModemKind?
+  type      String?
   /// IMEI — по нему модем узнают оператор и системы опроса.
-  imei    String?
+  imei      String?
   /// Порт, на котором модем слушает опрос. null — порт по умолчанию.
-  port    String?
+  port      String?
   /// GPRS по умолчанию: так опрашивается почти всё, CSD остаётся редким
   /// исключением.
-  channel Channel    @default(gprs)
-  simCard SimCard?
+  channel   Channel    @default(gprs)
+  simCard   SimCard?
+
+  @@index([projectId])
 }
 
 /// SIM-карта модема. Висит на модеме, а не на ТИ: при замене модема новая

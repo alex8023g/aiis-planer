@@ -198,7 +198,7 @@ export async function seedTis(
           polling === null ? undefined : { create: { description: polling } },
         notes: notes === null ? undefined : { create: { description: notes } },
         /// Модем с SIM-картой заводится с каждой группой — пустым.
-        modem: { create: { simCard: { create: {} } } },
+        modem: { create: { projectId, simCard: { create: {} } } },
       },
       select: { id: true },
     });

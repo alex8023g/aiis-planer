@@ -6,15 +6,18 @@ import { promisify } from 'node:util';
 
 import { refresh } from 'next/cache';
 
-import { Channel, EquipmentState } from '@/generated/prisma/enums';
+import type { Prisma } from '@/generated/prisma/client';
+import { Channel, EquipmentState, ModemKind } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 import { getProject, requireProjectEditor } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import { getMeterDictionaryChecker } from '@/lib/siDictionaryMatch';
 import { syncMeterSpecification } from '@/lib/specification';
 import {
+  BUILT_IN_MODEM,
   NO_PROPOSED_METER,
   invalidValueError,
+  modemImeiText,
   parseTiStatus,
   parseVoltageClass,
   parseWiringScheme,
@@ -71,12 +74,93 @@ function isBlankModem(modem: {
   );
 }
 
+/// Записать ячейку «IMEI модема» группы. IMEI — привязать свободный модем
+/// проекта (без группы) с этим IMEI; BUILT_IN_MODEM — модем встроенный в
+/// счётчик; null — отвязать модем группы. Вернёт текст ошибки или null.
+///
+/// Прежний модем группы, если он уходит, — пустая заготовка удаляется,
+/// заполненный становится свободным: его можно привязать к другой группе.
+/// Встроенным становится сам модем группы, пока у него нет IMEI: IP его
+/// SIM-карты остаётся. С IMEI — это определённый внешний модем: он уходит в
+/// свободные, а группе заводится новый встроенный с пустой SIM-картой.
+async function attachModem(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  groupId: string,
+  value: string | null,
+): Promise<string | null> {
+  const current = await tx.modem.findUnique({
+    where: { groupId },
+    select: {
+      id: true,
+      kind: true,
+      type: true,
+      imei: true,
+      port: true,
+      channel: true,
+      simCard: { select: { number: true, ip: true, provider: true } },
+    },
+  });
+
+  /// В ячейке уже это значение — менять нечего. Так же и у остальных ТИ
+  /// группы, когда значение вставили в несколько её строк.
+  if (modemImeiText(current) === (value ?? '')) return null;
+
+  if (value === BUILT_IN_MODEM && current && current.imei === null) {
+    await tx.modem.update({
+      where: { id: current.id },
+      data: { kind: ModemKind.builtIn },
+    });
+
+    return null;
+  }
+
+  const next =
+    value === null || value === BUILT_IN_MODEM
+      ? null
+      : await tx.modem.findFirst({
+          where: { projectId, groupId: null, imei: value },
+          select: { id: true },
+        });
+
+  if (value !== null && value !== BUILT_IN_MODEM && !next) {
+    return `Свободного модема с IMEI «${value}» в проекте нет`;
+  }
+
+  if (current) {
+    if (isBlankModem(current)) {
+      await tx.modem.delete({ where: { id: current.id } });
+    } else {
+      await tx.modem.update({
+        where: { id: current.id },
+        data: { groupId: null },
+      });
+    }
+  }
+
+  if (next) {
+    await tx.modem.update({ where: { id: next.id }, data: { groupId } });
+  } else if (value === BUILT_IN_MODEM) {
+    await tx.modem.create({
+      data: {
+        projectId,
+        groupId,
+        kind: ModemKind.builtIn,
+        simCard: { create: {} },
+      },
+    });
+  }
+
+  return null;
+}
+
 /// Колонки таблицы опроса, которые можно править.
 export type SurveyField =
   | 'number'
   | 'name'
   | 'status'
   | 'ip'
+  | 'modemImei'
   | 'port'
   | 'connectAddress'
   | 'technicalSolution'
@@ -99,6 +183,7 @@ const FIELDS = new Set<string>([
   'name',
   'status',
   'ip',
+  'modemImei',
   'port',
   'connectAddress',
   'technicalSolution',
@@ -123,6 +208,8 @@ const MAX_EDITS = 2000;
 /// ТИ, что стоит сейчас и что ставим (заводятся при первой записи),
 /// «требуется замена» — у того, что стоит. Модем и решение общие на группу,
 /// поэтому правка у одной ТИ меняет их у всей группы.
+/// IMEI модема выбирает модем группы из свободных модемов проекта или
+/// делает его встроенным (см. attachModem).
 ///
 /// Записанный тип ПУ сам решает «требуется замену», пока её не решили
 /// (null): годится тип по справочнику СИ АТС — «нет», не годится или его там
@@ -288,6 +375,17 @@ export async function updateSurveyCells(
             data: { needsReplacement: !checkMeter(nullable).ok },
           });
         }
+      } else if (field === 'modemImei') {
+        const ti = byId.get(tiId)!;
+        const groupId = ti.group?.id;
+
+        if (!groupId) {
+          return `У ТИ «${ti.name || 'без названия'}» нет группы — модем привязать некуда`;
+        }
+
+        const error = await attachModem(tx, projectId, groupId, nullable);
+
+        if (error) return error;
       } else if (field === 'technicalSolution') {
         const ti = byId.get(tiId)!;
         const groupId = ti.group?.id;
@@ -375,7 +473,12 @@ export async function addTis(
           group: {
             create: {
               project: { connect: { id: projectId } },
-              modem: { create: { simCard: { create: {} } } },
+              modem: {
+                create: {
+                  project: { connect: { id: projectId } },
+                  simCard: { create: {} },
+                },
+              },
             },
           },
         },
@@ -427,7 +530,10 @@ export async function mergeTiGroups(
       tis[0].groupId ??
       (
         await tx.tiGroup.create({
-          data: { projectId, modem: { create: { simCard: { create: {} } } } },
+          data: {
+            projectId,
+            modem: { create: { projectId, simCard: { create: {} } } },
+          },
           select: { id: true },
         })
       ).id;
@@ -585,7 +691,7 @@ export async function splitTiGroup(
         data: {
           projectId,
           tis: { connect: { id: ti.id } },
-          modem: { create: { simCard: { create: {} } } },
+          modem: { create: { projectId, simCard: { create: {} } } },
         },
         select: { id: true },
       });

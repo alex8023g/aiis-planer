@@ -298,6 +298,82 @@ export async function getMeterReaderTis(
   }));
 }
 
+/// Модем проекта с SIM-картой — строка страницы «Модемы и SIM». Значения
+/// уже подписаны для таблицы: вид и канал — словами.
+export type ProjectModem = {
+  id: string;
+  kind: string;
+  type: string | null;
+  imei: string | null;
+  port: string | null;
+  channel: string;
+  simNumber: string | null;
+  ip: string | null;
+  provider: string | null;
+  /// Номера ТИ группы модема, через запятую. Пусто — модем не привязан к
+  /// группе или в группе нет ТИ.
+  tiNumbers: string;
+};
+
+/// Модемы проекта — в порядке их ТИ в таблице опроса; модемы без ТИ в
+/// конце. Доступ не проверяется, как и в getTiRows.
+export async function getProjectModems(
+  projectId: string,
+): Promise<ProjectModem[]> {
+  const modems = await prisma.modem.findMany({
+    where: { projectId },
+    orderBy: { id: 'asc' },
+    select: {
+      id: true,
+      kind: true,
+      type: true,
+      imei: true,
+      port: true,
+      channel: true,
+      simCard: { select: { number: true, ip: true, provider: true } },
+      group: {
+        select: {
+          tis: {
+            orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+            select: { number: true, position: true },
+          },
+        },
+      },
+    },
+  });
+
+  const firstPosition = (modem: (typeof modems)[number]) =>
+    modem.group?.tis[0]?.position ?? Number.POSITIVE_INFINITY;
+
+  return modems
+    .toSorted((first, second) => firstPosition(first) - firstPosition(second))
+    .map((modem) => ({
+      id: modem.id,
+      kind: modem.kind ? modemKindLabels[modem.kind] : '',
+      type: modem.type,
+      imei: modem.imei,
+      port: modem.port,
+      channel: channelLabels[modem.channel],
+      simNumber: modem.simCard?.number ?? null,
+      ip: modem.simCard?.ip ?? null,
+      provider: modem.simCard?.provider ?? null,
+      tiNumbers: (modem.group?.tis ?? []).map((ti) => ti.number).join(', '),
+    }));
+}
+
+/// IMEI свободных модемов проекта — без группы, с записанным IMEI: из них
+/// выбирают модем группы в таблице опроса. По алфавиту, без повторов.
+export async function getFreeModemImeis(projectId: string): Promise<string[]> {
+  const modems = await prisma.modem.findMany({
+    where: { projectId, groupId: null, imei: { not: null } },
+    orderBy: { imei: 'asc' },
+    distinct: ['imei'],
+    select: { imei: true },
+  });
+
+  return modems.map((modem) => modem.imei!);
+}
+
 /// Что нужно для ПНР по ТИ: счётчик, что стоит сейчас, и модем группы.
 export type PnrTi = {
   id: string;
@@ -398,6 +474,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
             select: {
               kind: true,
               type: true,
+              imei: true,
               simCard: { select: { ip: true } },
             },
           },
@@ -441,6 +518,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
               ? {
                   kind: group.modem.kind,
                   type: group.modem.type,
+                  imei: group.modem.imei,
                   ip: group.modem.simCard?.ip ?? null,
                 }
               : null,
