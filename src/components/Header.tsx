@@ -24,6 +24,7 @@ const pageTitles = {
   warehouse: 'Склад',
   meterreader: 'MeterReader',
   specification: 'Спецификация',
+  pnr: 'ПНР',
   sidictionaryats: 'Справочник СИ АТС',
   equipmentcatalog: 'Справочник оборудования',
 } as const;
@@ -59,7 +60,8 @@ export function Header({
     current === 'project' ||
     current === 'aiis4' ||
     current === 'meterreader' ||
-    current === 'specification';
+    current === 'specification' ||
+    current === 'pnr';
 
   return (
     <header className='sticky top-0 z-10 border-b border-neutral-200 bg-neutral-50/80 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/80'>

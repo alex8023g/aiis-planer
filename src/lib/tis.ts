@@ -298,6 +298,68 @@ export async function getMeterReaderTis(
   }));
 }
 
+/// Что нужно для ПНР по ТИ: счётчик, что стоит сейчас, и модем группы.
+export type PnrTi = {
+  id: string;
+  name: string;
+  meterType: string | null;
+  /// Заводской номер счётчика.
+  meterNumber: string | null;
+  /// Связной (сетевой) адрес счётчика.
+  meterAddress: string | null;
+  /// Модем группы: общий на её ТИ, по нему таблица объединяет их ячейки.
+  /// null — у группы нет модема.
+  modemId: string | null;
+  /// IMEI и IP модема группы: модем общий на группу, поэтому у ТИ одной
+  /// группы они совпадают.
+  modemImei: string | null;
+  ip: string | null;
+};
+
+/// ТИ проекта для ПНР — в том порядке, в котором их записал составитель.
+/// Доступ не проверяется, как и в getTiRows.
+export async function getPnrTis(projectId: string): Promise<PnrTi[]> {
+  const tis = await prisma.ti.findMany({
+    where: { projectId },
+    orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+    select: {
+      id: true,
+      name: true,
+      meters: {
+        where: { state: EquipmentState.current },
+        select: { type: true, number: true, meterAddress: true },
+      },
+      group: {
+        select: {
+          modem: {
+            select: {
+              id: true,
+              imei: true,
+              simCard: { select: { ip: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  return tis.map((ti) => {
+    const meter = ti.meters[0];
+    const modem = ti.group?.modem;
+
+    return {
+      id: ti.id,
+      name: ti.name,
+      meterType: meter?.type ?? null,
+      meterNumber: meter?.number ?? null,
+      meterAddress: meter?.meterAddress ?? null,
+      modemId: modem?.id ?? null,
+      modemImei: modem?.imei ?? null,
+      ip: modem?.simCard?.ip ?? null,
+    };
+  });
+}
+
 /// ТИ проекта для таблицы опроса (aiis4) — в том порядке, в котором их
 /// записал составитель. Значения как в базе: ячейки из них собирает клиент
 /// (surveyTiCells в src/lib/survey-ti.ts). Доступ не проверяется, как и в
