@@ -91,7 +91,8 @@ model Ti {
   /// ТИ.
   notes           String?
   status          TiStatus      @default(in_progress)
-  /// Не больше двух: текущий и новый (см. @@unique в Meter).
+  /// Не больше трёх: текущий, новый и последний снятый (см. @@unique в
+  /// Meter и replaceMeter).
   meters          Meter[]
   // ttId          String
   // tt            Tt            @relation(fields: [ttId], references: [id], onDelete: Cascade)

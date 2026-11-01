@@ -8,6 +8,7 @@ import {
   Pencil,
   Plug,
   Plus,
+  Replace,
   Split,
   Trash2,
 } from 'lucide-react';
@@ -66,6 +67,7 @@ import {
   mergeTiGroups,
   splitTiGroup,
 } from './actions';
+import { ReplaceMeterDialog } from './ReplaceMeterDialog';
 import { useCellSelection } from './useCellSelection';
 
 /// Колонки, где в режиме правки можно выделять ячейки (индексы в
@@ -217,6 +219,7 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
       case 'meterType':
         patchTi(ti, {
           currentMeter: {
+            number: currentMeterOf(ti)?.number ?? null,
             isCompliant: currentMeterOf(ti)?.isCompliant ?? null,
             needsReplacement: currentMeterOf(ti)?.needsReplacement ?? null,
             type: trimmed,
@@ -231,7 +234,9 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
       case 'proposedMeterType':
         patchTi(ti, {
           proposedMeter:
-            trimmed && trimmed !== NO_PROPOSED_METER ? { type: trimmed } : null,
+            trimmed && trimmed !== NO_PROPOSED_METER
+              ? { type: trimmed, number: ti?.proposedMeter?.number ?? null }
+              : null,
         });
         break;
       case 'uNom': {
@@ -268,6 +273,7 @@ function applyEdits(tis: SurveyTi[], edits: MeterReaderEdit[]): SurveyTi[] {
           patchTi(ti, {
             currentMeter: {
               type: null,
+              number: null,
               isCompliant: null,
               inAtsDictionary: null,
               atsDictionaryReason: null,
@@ -371,6 +377,10 @@ export function SurveyView({
     () => [...rowSelection.rows].sort((first, second) => first - second),
     [rowSelection],
   );
+  /// ТИ для диалога «замена сч.»: он открывается на одну выделенную строку.
+  const replaceTi =
+    selectedRows.length === 1 ? optimisticTis[selectedRows[0]] : undefined;
+  const [replaceOpen, setReplaceOpen] = useState(false);
   /// Опрос счётчика кнопкой Connect: идёт ли сейчас. Итог — в колонке
   /// «подключён».
   const [isConnecting, startConnectTransition] = useTransition();
@@ -1225,6 +1235,25 @@ export function SurveyView({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+        {/* Замена счётчика — на одну выделенную ТИ. */}
+        {editable && replaceTi && (
+          <>
+            <Button
+              variant='outline'
+              onClick={() => setReplaceOpen(true)}
+              disabled={isPending}
+            >
+              <Replace />
+              Замена сч.
+            </Button>
+            <ReplaceMeterDialog
+              projectId={projectId}
+              ti={replaceTi}
+              open={replaceOpen}
+              onOpenChange={setReplaceOpen}
+            />
+          </>
+        )}
         {/* Удалить ТИ можно, когда выделены строки (кликом в первую колонку,
             с Ctrl — несколько). */}
         {editable &&

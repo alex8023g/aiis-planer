@@ -10,6 +10,7 @@ import { EquipmentState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 import { getProject, requireProjectEditor } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
+import { getMeterDictionaryChecker } from '@/lib/siDictionaryMatch';
 import type { ActionResult } from '@/lib/types';
 
 import {
@@ -350,6 +351,125 @@ export async function deleteTis(
   });
 
   if (error) return { ok: false, error };
+
+  refresh();
+
+  return { ok: true };
+}
+
+/// Тип и номер счётчика из диалога «замена сч.». null — поле не трогаем.
+type MeterFields = { type: string | null; number: string | null };
+
+/// Заменить счётчик ТИ: текущий уходит в снятые (state = removed), новый
+/// (proposed) становится текущим. Сначала дописываем пустые тип и номер из
+/// диалога — записанное не перезаписываем, его правят в ячейках таблицы.
+/// Снятый хранится один (@@unique в Meter): прежний снятый удаляем.
+export async function replaceMeter(
+  projectId: string,
+  tiId: string,
+  meters: { current: MeterFields; proposed: MeterFields },
+): Promise<ActionResult> {
+  const allowed = await requireProjectEditor(projectId);
+  if (!allowed.ok) return allowed;
+
+  const fields = (meter: MeterFields) => ({
+    type: meter.type?.trim() || null,
+    number: meter.number?.trim() || null,
+  });
+  const current = fields(meters.current);
+  const proposed = fields(meters.proposed);
+
+  const ti = await prisma.ti.findFirst({
+    where: { id: tiId, projectId },
+    select: {
+      meters: {
+        where: {
+          state: { in: [EquipmentState.current, EquipmentState.proposed] },
+        },
+        select: { state: true, type: true, number: true },
+      },
+    },
+  });
+
+  if (!ti) return { ok: false, error: 'ТИ не найдена — обновите страницу' };
+
+  const existingCurrent = ti.meters.find(
+    (meter) => meter.state === EquipmentState.current,
+  );
+  const existingProposed = ti.meters.find(
+    (meter) => meter.state === EquipmentState.proposed,
+  );
+
+  /// Страница могла устареть: поле, которое на ней было пустым, уже
+  /// заполнили.
+  const filled = (
+    meter: { type: string | null; number: string | null },
+    existing: { type: string | null; number: string | null } | undefined,
+  ) => (meter.type && existing?.type) || (meter.number && existing?.number);
+
+  if (filled(current, existingCurrent) || filled(proposed, existingProposed)) {
+    return { ok: false, error: 'Счётчик уже заполнен — обновите страницу' };
+  }
+
+  /// Ставить без типа нечего.
+  const proposedType = existingProposed?.type ?? proposed.type;
+
+  if (!proposedType) {
+    return { ok: false, error: 'Укажите тип нового счётчика' };
+  }
+
+  /// Требуется ли замена новому текущему — по справочнику АТС, как и при
+  /// правке типа в таблице.
+  const needsReplacement = !(await getMeterDictionaryChecker())(proposedType)
+    .ok;
+  const today = new Date();
+
+  await prisma.$transaction(async (tx) => {
+    const data = (meter: { type: string | null; number: string | null }) => ({
+      ...(meter.type && { type: meter.type }),
+      ...(meter.number && { number: meter.number }),
+    });
+
+    await tx.meter.deleteMany({
+      where: { tiId, state: EquipmentState.removed },
+    });
+
+    if (existingCurrent) {
+      await tx.meter.update({
+        where: { tiId_state: { tiId, state: EquipmentState.current } },
+        data: {
+          ...data(current),
+          state: EquipmentState.removed,
+          dateRemoved: today,
+        },
+      });
+    } else if (current.type || current.number) {
+      await tx.meter.create({
+        data: {
+          tiId,
+          ...data(current),
+          state: EquipmentState.removed,
+          dateRemoved: today,
+        },
+      });
+    }
+
+    const installed = {
+      ...data(proposed),
+      state: EquipmentState.current,
+      needsReplacement,
+      dateInstalled: today,
+    };
+
+    if (existingProposed) {
+      await tx.meter.update({
+        where: { tiId_state: { tiId, state: EquipmentState.proposed } },
+        data: installed,
+      });
+    } else {
+      await tx.meter.create({ data: { tiId, ...installed } });
+    }
+  });
 
   refresh();
 

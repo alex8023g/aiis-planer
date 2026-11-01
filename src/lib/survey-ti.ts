@@ -46,6 +46,8 @@ export type SurveyTi = {
   /// проверен.
   currentMeter: {
     type: string | null;
+    /// Заводской номер.
+    number: string | null;
     isCompliant: boolean | null;
     /// Требуется ли замена — решение по ТИ; какую марку ставим — в
     /// proposedMeter. null — ещё не решили.
@@ -58,7 +60,7 @@ export type SurveyTi = {
     atsWiring: DbWiringScheme | null;
   } | null;
   /// Счётчик, который ставим взамен (state = proposed).
-  proposedMeter: { type: string | null } | null;
+  proposedMeter: { type: string | null; number: string | null } | null;
   /// Общее с другими ТИ группы. null — ТИ сама по себе.
   group: {
     id: string;

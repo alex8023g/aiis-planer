@@ -314,6 +314,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
         select: {
           state: true,
           type: true,
+          number: true,
           isCompliant: true,
           needsReplacement: true,
         },
@@ -350,6 +351,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
       currentMeter: current
         ? {
             type: current.type,
+            number: current.number,
             isCompliant: current.isCompliant,
             needsReplacement: current.needsReplacement,
             inAtsDictionary: verdict ? verdict.ok : null,
@@ -357,7 +359,9 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
             atsWiring: verdict?.wiring ?? null,
           }
         : null,
-      proposedMeter: proposed ? { type: proposed.type } : null,
+      proposedMeter: proposed
+        ? { type: proposed.type, number: proposed.number }
+        : null,
       group: group
         ? {
             id: group.id,
