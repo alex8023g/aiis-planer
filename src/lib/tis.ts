@@ -49,7 +49,7 @@ export const tiColumns: SurveyColumn[] = [
 
   { title: 'модем вид', minWidth: 120 },
   { title: 'модем тип', minWidth: 140 },
-  { title: 'модем №', minWidth: 120 },
+  { title: 'модем IMEI', minWidth: 140 },
 
   { title: 'SIM №', minWidth: 140 },
   { title: 'SIM IP', minWidth: 120 },
@@ -125,7 +125,13 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       uNom: true,
       groupId: true,
       meters: {
-        select: { state: true, type: true, number: true, isCompliant: true },
+        select: {
+          state: true,
+          type: true,
+          number: true,
+          isCompliant: true,
+          meterAddress: true,
+        },
       },
       tt: {
         select: {
@@ -149,9 +155,6 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
           ratio: true,
         },
       },
-      connection: {
-        select: { meterAddress: true, port: true, channel: true },
-      },
       group: {
         select: {
           uspd: { select: { type: true, number: true } },
@@ -159,7 +162,9 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
             select: {
               kind: true,
               type: true,
-              number: true,
+              imei: true,
+              port: true,
+              channel: true,
               simCard: { select: { number: true, ip: true, provider: true } },
             },
           },
@@ -231,15 +236,15 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
 
       cell(modem?.kind ? modemKindLabels[modem.kind] : '', modemSpan),
       cell(modem?.type ?? '', modemSpan),
-      cell(modem?.number ?? '', modemSpan),
+      cell(modem?.imei ?? '', modemSpan),
 
       cell(sim?.number ?? '', modemSpan),
       cell(sim?.ip ?? '', modemSpan),
       cell(sim?.provider ?? '', modemSpan),
 
-      text(ti.connection?.meterAddress),
-      text(ti.connection?.port),
-      text(ti.connection ? channelLabels[ti.connection.channel] : ''),
+      text(current?.meterAddress),
+      cell(modem?.port ?? '', modemSpan),
+      cell(modem ? channelLabels[modem.channel] : '', modemSpan),
 
       cell(ti.group?.sidePolling?.description ?? '', pollingSpans[index]),
       cell(ti.group?.notes?.description ?? '', notesSpans[index]),
@@ -270,10 +275,15 @@ export async function getMeterReaderTis(
     select: {
       id: true,
       name: true,
-      connection: { select: { meterAddress: true, port: true } },
+      meters: {
+        where: { state: EquipmentState.current },
+        select: { meterAddress: true },
+      },
       group: {
         select: {
-          modem: { select: { simCard: { select: { ip: true } } } },
+          modem: {
+            select: { port: true, simCard: { select: { ip: true } } },
+          },
         },
       },
     },
@@ -283,8 +293,8 @@ export async function getMeterReaderTis(
     id: ti.id,
     name: ti.name,
     ip: ti.group?.modem?.simCard?.ip ?? null,
-    port: ti.connection?.port ?? null,
-    connectAddress: ti.connection?.meterAddress ?? null,
+    port: ti.group?.modem?.port ?? null,
+    connectAddress: ti.meters[0]?.meterAddress ?? null,
   }));
 }
 
@@ -306,7 +316,6 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
       wiring: true,
       existingPolling: true,
       freeRs485: true,
-      connection: { select: { meterAddress: true, port: true } },
       meters: {
         where: {
           state: { in: [EquipmentState.current, EquipmentState.proposed] },
@@ -317,6 +326,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
           number: true,
           isCompliant: true,
           needsReplacement: true,
+          meterAddress: true,
         },
       },
       group: {
@@ -335,7 +345,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
     },
   });
 
-  return tis.map(({ meters, group, connection, ...ti }) => {
+  return tis.map(({ meters, group, ...ti }) => {
     const current = meters.find(
       (meter) => meter.state === EquipmentState.current,
     );
@@ -346,8 +356,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
 
     return {
       ...ti,
-      meterAddress: connection?.meterAddress ?? null,
-      port: connection?.port ?? null,
+      meterAddress: current?.meterAddress ?? null,
       currentMeter: current
         ? {
             type: current.type,

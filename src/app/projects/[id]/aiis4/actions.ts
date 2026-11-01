@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 
 import { refresh } from 'next/cache';
 
-import { EquipmentState } from '@/generated/prisma/enums';
+import { Channel, EquipmentState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 import { getProject, requireProjectEditor } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
@@ -44,12 +44,14 @@ function nextNumber(numbers: string[]): number {
   return values.length > 0 ? Math.max(...values) + 1 : 1;
 }
 
-/// Модем — пустая заготовка: ни вида, ни типа, ни номера, и SIM-карта (если
-/// есть) тоже пустая.
+/// Модем — пустая заготовка: ни вида, ни типа, ни IMEI, ни порта, канал по
+/// умолчанию, и SIM-карта (если есть) тоже пустая.
 function isBlankModem(modem: {
   kind: unknown;
   type: string | null;
-  number: string | null;
+  imei: string | null;
+  port: string | null;
+  channel: Channel;
   simCard: {
     number: string | null;
     ip: string | null;
@@ -61,7 +63,9 @@ function isBlankModem(modem: {
   return (
     modem.kind === null &&
     modem.type === null &&
-    modem.number === null &&
+    modem.imei === null &&
+    modem.port === null &&
+    modem.channel === Channel.gprs &&
     (sim === null ||
       (sim.number === null && sim.ip === null && sim.provider === null))
   );
@@ -112,9 +116,9 @@ const FIELDS = new Set<string>([
 const MAX_EDITS = 2000;
 /// Записать правки ячеек таблицы опроса — одну (правка ячейки) или пачку
 /// (вставка из буфера). Каждое поле живёт в своей таблице:
-/// наименование — в Ti, порт и адрес — в Connection (заводится при первой
-/// записи), Uном, схема, существующий опрос и RS-485 — тоже в Ti, IP — в
-/// SIM-карте модема группы,
+/// наименование — в Ti, адрес — в счётчике, что стоит сейчас (заводится при
+/// первой записи), Uном, схема, существующий опрос и RS-485 — тоже в Ti,
+/// порт — в модеме группы, IP — в SIM-карте модема группы,
 /// тех. решение — в TechnicalSolution группы, тип ПУ и замена — в счётчиках
 /// ТИ, что стоит сейчас и что ставим (заводятся при первой записи),
 /// «требуется замена» — у того, что стоит. Модем и решение общие на группу,
@@ -183,10 +187,7 @@ export async function updateSurveyCells(
     for (const { tiId, field, value } of edits) {
       const groupId = byId.get(tiId)!.group?.id;
 
-      if (
-        groupId &&
-        (field === 'meterType' || field === 'proposedMeterType')
-      ) {
+      if (groupId && (field === 'meterType' || field === 'proposedMeterType')) {
         meterGroups.add(groupId);
       }
 
@@ -198,14 +199,26 @@ export async function updateSurveyCells(
         await tx.ti.update({ where: { id: tiId }, data: { number: trimmed } });
       } else if (field === 'name') {
         await tx.ti.update({ where: { id: tiId }, data: { name: trimmed } });
-      } else if (field === 'port' || field === 'connectAddress') {
-        const data =
-          field === 'port' ? { port: nullable } : { meterAddress: nullable };
+      } else if (field === 'port') {
+        const ti = byId.get(tiId)!;
+        const modemId = ti.group?.modem?.id;
 
-        await tx.connection.upsert({
-          where: { tiId },
-          create: { tiId, ...data },
-          update: data,
+        if (!modemId) {
+          return `У ТИ «${ti.name || 'без названия'}» нет модема — порт хранить негде`;
+        }
+
+        await tx.modem.update({
+          where: { id: modemId },
+          data: { port: nullable },
+        });
+      } else if (field === 'connectAddress') {
+        /// Адрес — у счётчика, что стоит сейчас: у нового он будет свой.
+        const state = EquipmentState.current;
+
+        await tx.meter.upsert({
+          where: { tiId_state: { tiId, state } },
+          create: { tiId, state, meterAddress: nullable },
+          update: { meterAddress: nullable },
         });
       } else if (field === 'uNom') {
         /// Разбор уже проверен (invalidValueError) — undefined здесь нет.
@@ -443,7 +456,9 @@ export async function mergeTiGroups(
           id: true,
           kind: true,
           type: true,
-          number: true,
+          imei: true,
+          port: true,
+          channel: true,
           simCard: { select: { number: true, ip: true, provider: true } },
         },
       },
@@ -842,14 +857,15 @@ export async function connectMeter(
   const ti = await prisma.ti.findFirst({
     where: { id: tiId, projectId },
     select: {
-      connection: { select: { meterAddress: true, port: true } },
       meters: {
         where: { state: EquipmentState.current },
-        select: { type: true },
+        select: { type: true, meterAddress: true },
       },
       group: {
         select: {
-          modem: { select: { simCard: { select: { ip: true } } } },
+          modem: {
+            select: { port: true, simCard: { select: { ip: true } } },
+          },
         },
       },
     },
@@ -858,7 +874,7 @@ export async function connectMeter(
   if (!ti) return { ok: false, error: 'ТИ не найдена — обновите страницу' };
 
   const ip = ti.group?.modem?.simCard?.ip;
-  const address = ti.connection?.meterAddress;
+  const address = ti.meters[0]?.meterAddress;
 
   if (!ip) return { ok: false, error: 'У ТИ не указан IP' };
   if (!address) return { ok: false, error: 'У ТИ не указан адрес счётчика' };
@@ -866,7 +882,7 @@ export async function connectMeter(
   try {
     const config = parseConnection({
       ip,
-      port: ti.connection?.port || DEFAULT_METER_PORT,
+      port: ti.group?.modem?.port || DEFAULT_METER_PORT,
       address,
       meterType: ti.meters[0]?.type,
     });

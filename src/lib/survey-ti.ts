@@ -36,10 +36,8 @@ export type SurveyTi = {
   /// Существующий опрос — свободный текст, как записали на опросе.
   existingPolling: string | null;
   freeRs485: boolean | null;
-  /// Связной (сетевой) адрес счётчика и порт — из Connection, свои у каждой
-  /// ТИ.
+  /// Связной (сетевой) адрес счётчика, что стоит сейчас.
   meterAddress: string | null;
-  port: string | null;
   /// Счётчик, что стоит сейчас (state = current). inAtsDictionary — есть ли
   /// его тип в справочнике СИ АТС (см. src/lib/siDictionaryMatch.ts);
   /// интегральный счётчик считается «нет». null — тип не записан или ещё не

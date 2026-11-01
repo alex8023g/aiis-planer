@@ -98,7 +98,6 @@ model Ti {
   // tt            Tt            @relation(fields: [ttId], references: [id], onDelete: Cascade)
   tt              Tt[]
   tn              Tn[]
-  connection      Connection?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -145,6 +144,9 @@ model Meter {
   /// Требуется ли замена счётчика: решение, а не марка — какую ставим, пишут
   /// в type у счётчика с state = proposed. null — ещё не решили.
   needsReplacement Boolean?
+  /// Связной (сетевой) адрес счётчика. У самого счётчика: адрес задан в
+  /// приборе, и новый счётчик приезжает со своим.
+  meterAddress     String?
   dateInstalled    DateTime?      @db.Date
   dateRemoved      DateTime?      @db.Date
 
@@ -233,21 +235,14 @@ model Modem {
   /// неизвестно.
   kind    ModemKind?
   type    String?
-  number  String?
-  simCard SimCard?
-}
-
-/// Как опрашивается счётчик ТИ.
-model Connection {
-  id           String  @id @default(cuid())
-  tiId         String  @unique
-  ti           Ti      @relation(fields: [tiId], references: [id], onDelete: Cascade)
-  /// Связной (сетевой) адрес счётчика.
-  meterAddress String?
-  port         String?
+  /// IMEI — по нему модем узнают оператор и системы опроса.
+  imei    String?
+  /// Порт, на котором модем слушает опрос. null — порт по умолчанию.
+  port    String?
   /// GPRS по умолчанию: так опрашивается почти всё, CSD остаётся редким
   /// исключением.
-  channel      Channel @default(gprs)
+  channel Channel    @default(gprs)
+  simCard SimCard?
 }
 
 /// SIM-карта модема. Висит на модеме, а не на ТИ: при замене модема новая
