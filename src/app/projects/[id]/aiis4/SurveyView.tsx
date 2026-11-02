@@ -336,6 +336,9 @@ function applyEdits(tis: SurveyTi[], edits: SurveyEdit[]): SurveyTi[] {
               : { kind: null, type: null, imei, ip: null };
       }
 
+      /// IP у группы без модема заводит модем (см. updateSurveyCells).
+      if (!modem && ip) modem = { kind: null, type: null, imei: null, ip };
+
       next = {
         ...next,
         group: {

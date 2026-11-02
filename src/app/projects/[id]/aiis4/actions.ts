@@ -75,8 +75,9 @@ function isBlankModem(modem: {
 }
 
 /// Записать ячейку «IMEI модема» группы. IMEI — привязать свободный модем
-/// проекта (без группы) с этим IMEI; BUILT_IN_MODEM — модем встроенный в
-/// счётчик; null — отвязать модем группы. Вернёт текст ошибки или null.
+/// проекта (без группы) с этим IMEI, а нет в проекте такого — завести новый с
+/// SIM-картой; BUILT_IN_MODEM — модем встроенный в счётчик; null — отвязать
+/// модем группы. Вернёт текст ошибки или null.
 ///
 /// Прежний модем группы, если он уходит, — пустая заготовка удаляется,
 /// заполненный становится свободным: его можно привязать к другой группе.
@@ -124,7 +125,24 @@ async function attachModem(
         });
 
   if (value !== null && value !== BUILT_IN_MODEM && !next) {
-    return `Свободного модема с IMEI «${value}» в проекте нет`;
+    const taken = await tx.modem.findFirst({
+      where: { projectId, imei: value },
+      select: { id: true },
+    });
+
+    if (taken) return `Модем с IMEI «${value}» уже стоит в другой группе`;
+
+    /// Модема с таким IMEI в проекте ещё нет — заводим его. Модем группы без
+    /// IMEI (например, заведённый ради IP) получает этот IMEI сам: его
+    /// SIM-карта с IP остаётся.
+    if (current && current.imei === null) {
+      await tx.modem.update({
+        where: { id: current.id },
+        data: { imei: value },
+      });
+
+      return null;
+    }
   }
 
   if (current) {
@@ -140,12 +158,14 @@ async function attachModem(
 
   if (next) {
     await tx.modem.update({ where: { id: next.id }, data: { groupId } });
-  } else if (value === BUILT_IN_MODEM) {
+  } else if (value !== null) {
     await tx.modem.create({
       data: {
         projectId,
         groupId,
-        kind: ModemKind.builtIn,
+        ...(value === BUILT_IN_MODEM
+          ? { kind: ModemKind.builtIn }
+          : { imei: value }),
         simCard: { create: {} },
       },
     });
@@ -208,8 +228,9 @@ const MAX_EDITS = 2000;
 /// ТИ, что стоит сейчас и что ставим (заводятся при первой записи),
 /// «требуется замена» — у того, что стоит. Модем и решение общие на группу,
 /// поэтому правка у одной ТИ меняет их у всей группы.
-/// IMEI модема выбирает модем группы из свободных модемов проекта или
-/// делает его встроенным (см. attachModem).
+/// IMEI модема выбирает модем группы из свободных модемов проекта, заводит
+/// новый или делает его встроенным (см. attachModem). IP у группы без модема
+/// заводит модем с SIM-картой.
 ///
 /// Записанный тип ПУ сам решает «требуется замену», пока её не решили
 /// (null): годится тип по справочнику СИ АТС — «нет», не годится или его там
@@ -407,17 +428,32 @@ export async function updateSurveyCells(
         }
       } else {
         const ti = byId.get(tiId)!;
-        const modemId = ti.group?.modem?.id;
+        const groupId = ti.group?.id;
 
-        if (!modemId) {
-          return `У ТИ «${ti.name || 'без названия'}» нет модема — IP хранить негде`;
+        if (!groupId) {
+          return `У ТИ «${ti.name || 'без названия'}» нет группы — IP хранить негде`;
         }
 
-        await tx.simCard.upsert({
-          where: { modemId },
-          create: { modemId, ip: nullable },
-          update: { ip: nullable },
+        /// Модем читаем заново, а не из выборки выше: его могла завести или
+        /// сменить предыдущая правка той же вставки (IMEI или IP другой ТИ
+        /// группы).
+        const modem = await tx.modem.findUnique({
+          where: { groupId },
+          select: { id: true },
         });
+
+        if (modem) {
+          await tx.simCard.upsert({
+            where: { modemId: modem.id },
+            create: { modemId: modem.id, ip: nullable },
+            update: { ip: nullable },
+          });
+        } else if (nullable !== null) {
+          /// Модема у группы нет — IP заводит его вместе с SIM-картой.
+          await tx.modem.create({
+            data: { projectId, groupId, simCard: { create: { ip: nullable } } },
+          });
+        }
       }
     }
 
@@ -436,7 +472,7 @@ export async function updateSurveyCells(
 
 /// Добавить count пустых ТИ в конец таблицы опроса. Номера идут подряд за
 /// последним, наименование пустое — его заполняют уже в таблице. Каждая ТИ
-/// получает свою группу с пустыми модемом и SIM-картой.
+/// получает свою группу, пока без модема.
 export async function addTis(
   projectId: string,
   count: number,
@@ -457,9 +493,8 @@ export async function addTis(
   const firstPosition =
     existing.reduce((max, ti) => Math.max(max, ti.position), -1) + 1;
 
-  /// Каждая ТИ — со своей группой, а у группы пустые модем и SIM-карта: IP
-  /// можно вписать сразу. createMany вложенных записей не умеет — поэтому по
-  /// одной, но одной транзакцией.
+  /// Каждая ТИ — со своей группой. createMany вложенных записей не умеет —
+  /// поэтому по одной, но одной транзакцией.
   await prisma.$transaction(async (tx) => {
     for (let index = 0; index < count; index++) {
       await tx.ti.create({
@@ -471,15 +506,7 @@ export async function addTis(
           name: '',
           position: firstPosition + index,
           group: {
-            create: {
-              project: { connect: { id: projectId } },
-              modem: {
-                create: {
-                  project: { connect: { id: projectId } },
-                  simCard: { create: {} },
-                },
-              },
-            },
+            create: { project: { connect: { id: projectId } } },
           },
         },
       });
@@ -530,10 +557,7 @@ export async function mergeTiGroups(
       tis[0].groupId ??
       (
         await tx.tiGroup.create({
-          data: {
-            projectId,
-            modem: { create: { projectId, simCard: { create: {} } } },
-          },
+          data: { projectId },
           select: { id: true },
         })
       ).id;
@@ -643,9 +667,8 @@ export async function mergeTiGroups(
 /// Разъединить объединённую ячейку «тех. решения» — как в Excel: значение
 /// остаётся в верхней. Верхняя ТИ (по порядку в таблице) остаётся в группе
 /// со всем общим — решением, модемом, УСПД, текстом опроса, примечанием, —
-/// остальные из группы выходят, и каждая получает свою новую группу с пустым
-/// модемом и SIM-картой: как и при создании группы, IP есть куда вписать
-/// сразу. Ничего не удаляется.
+/// остальные из группы выходят, и каждая получает свою новую группу, пока без
+/// модема. Ничего не удаляется.
 export async function splitTiGroup(
   projectId: string,
   tiIds: string[],
@@ -691,7 +714,6 @@ export async function splitTiGroup(
         data: {
           projectId,
           tis: { connect: { id: ti.id } },
-          modem: { create: { projectId, simCard: { create: {} } } },
         },
         select: { id: true },
       });
