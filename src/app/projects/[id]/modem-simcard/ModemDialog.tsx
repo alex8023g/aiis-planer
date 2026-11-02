@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus } from 'lucide-react';
+import { Pencil, Plus } from 'lucide-react';
 import { useId, useState, useTransition, type SubmitEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -16,10 +16,11 @@ import {
 import { Field, FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import type { ProjectModem } from '@/lib/tis';
 
-import { createModem, type NewModemFields } from './actions';
+import { createModem, updateModem, type ModemFields } from './actions';
 
-const emptyFields: NewModemFields = {
+const emptyFields: ModemFields = {
   type: '',
   imei: '',
   simNumber: '',
@@ -27,20 +28,37 @@ const emptyFields: NewModemFields = {
   provider: '',
 };
 
-/// Все поля необязательны: модем заводят, ещё не зная о нём всего, и
-/// дописывают потом.
-export function AddModemDialog({ projectId }: { projectId: string }) {
+function fieldsOf(modem: ProjectModem): ModemFields {
+  return {
+    type: modem.type ?? '',
+    imei: modem.imei ?? '',
+    simNumber: modem.simNumber ?? '',
+    ip: modem.ip ?? '',
+    provider: modem.provider ?? '',
+  };
+}
+
+/// Добавление модема с сим-картой, а с modem — правка выбранного. Все поля
+/// необязательны: модем заводят, ещё не зная о нём всего, и дописывают потом.
+export function ModemDialog({
+  projectId,
+  modem,
+}: {
+  projectId: string;
+  modem?: ProjectModem;
+}) {
   const fieldId = useId();
   const [open, setOpen] = useState(false);
   const [fields, setFields] = useState(emptyFields);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const title = modem ? 'Изменить модем' : 'Добавить модем с сим-картой';
 
   /// Форма живёт, пока смонтирован диалог, поэтому при каждом открытии
-  /// очищаем её.
+  /// заполняем её заново: пустой или полями модема.
   function handleOpenChange(next: boolean) {
     if (next) {
-      setFields(emptyFields);
+      setFields(modem ? fieldsOf(modem) : emptyFields);
       setSubmitError(null);
     }
     setOpen(next);
@@ -50,7 +68,9 @@ export function AddModemDialog({ projectId }: { projectId: string }) {
     event.preventDefault();
     setSubmitError(null);
     startTransition(async () => {
-      const result = await createModem(projectId, fields);
+      const result = modem
+        ? await updateModem(projectId, modem.id, fields)
+        : await createModem(projectId, fields);
 
       if (!result.ok) {
         setSubmitError(result.error);
@@ -60,7 +80,7 @@ export function AddModemDialog({ projectId }: { projectId: string }) {
     });
   }
 
-  function input(key: keyof NewModemFields, label: string, mono = false) {
+  function input(key: keyof ModemFields, label: string, mono = false) {
     const id = `modem-${key}-${fieldId}`;
 
     return (
@@ -85,14 +105,14 @@ export function AddModemDialog({ projectId }: { projectId: string }) {
       <DialogTrigger
         render={
           <Button variant='outline'>
-            <Plus />
-            Добавить модем с сим-картой
+            {modem ? <Pencil /> : <Plus />}
+            {title}
           </Button>
         }
       />
       <DialogContent className='sm:max-w-md'>
         <DialogHeader>
-          <DialogTitle>Добавить модем с сим-картой</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} noValidate className='grid gap-4'>
           <FieldGroup className='gap-3'>
@@ -110,7 +130,7 @@ export function AddModemDialog({ projectId }: { projectId: string }) {
             )}
             <DialogClose render={<Button variant='outline'>Отмена</Button>} />
             <Button type='submit' disabled={isPending}>
-              {isPending ? 'Сохранение…' : 'Добавить'}
+              {isPending ? 'Сохранение…' : modem ? 'Сохранить' : 'Добавить'}
             </Button>
           </DialogFooter>
         </form>
