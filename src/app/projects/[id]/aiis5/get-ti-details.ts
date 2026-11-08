@@ -53,7 +53,7 @@ function transformer(row: DbTransformer | undefined): TiDetails['tt'] {
   };
 }
 
-/// Данные ТИ проекта сверх таблицы опроса (см. tiDetailsColumns) — по id ТИ.
+/// Данные ТИ проекта сверх таблицы опроса (колонки в ./ti-details.ts) — по id ТИ.
 /// Доступ не проверяется, как и в getSurveyTis: проект уже прочитан
 /// вызывающим.
 export async function getTiDetails(

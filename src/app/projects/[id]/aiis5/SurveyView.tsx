@@ -44,7 +44,6 @@ import {
   parseVoltageClass,
   parseWiringScheme,
   parseYesNo,
-  surveyTiCells,
   suggestedWiring,
   tiStatusLabels,
   wiringLabels,
@@ -69,31 +68,23 @@ import {
 import { ReplaceMeterDialog } from './ReplaceMeterDialog';
 import { ColumnPicker } from './ColumnPicker';
 import { tableColumns as columns, useColumnVisibility } from './columns';
-import { tiDetailsCells, type TiDetails } from './ti-details';
+import { columnIndex, tableRows, type TiDetails } from './ti-details';
 import { useCellSelection } from './useCellSelection';
 
-/// Колонки, где в режиме правки можно выделять ячейки (индексы в
-/// surveyTiColumns): правимые (EDITABLE_COLUMNS) и «опрос». Выделение одно на таблицу — клик в другой колонке
-/// переносит его туда. В режиме просмотра клик выделяет строку целиком.
-/// «Соотв. по справочнику АТС» (6) не выделяется: её не правят, она считается
-/// по типу ПУ.
-const SELECTABLE_COLUMNS = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-/// Колонка «тех. решение» в surveyTiColumns.
-const SOLUTION_COLUMN = 12;
-/// Колонка «IP» в surveyTiColumns.
-const IP_COLUMN = 14;
-/// Колонка «подключён» в surveyTiColumns.
-const CONNECTED_COLUMN = 16;
-/// Колонка «статус» в surveyTiColumns.
-const STATUS_COLUMN = 3;
-/// Колонка «соотв. по справоч АТС» в surveyTiColumns.
-const ATS_DICTIONARY_COLUMN = 6;
-/// Колонка «схема включения» в surveyTiColumns.
-const WIRING_COLUMN = 8;
-/// Колонка «замена сч.» в surveyTiColumns.
-const PROPOSED_METER_COLUMN = 9;
+/// Индексы колонок здесь — в tableColumns (./ti-details.ts), найдены по id:
+/// колонки можно переставлять, не трогая этот файл.
+const ROW_HANDLE_COLUMN = columnIndex('rowHandle');
+const SOLUTION_COLUMN = columnIndex('technicalSolution');
+const IP_COLUMN = columnIndex('ip');
+const CONNECTED_COLUMN = columnIndex('connected');
+const STATUS_COLUMN = columnIndex('status');
+const ATS_DICTIONARY_COLUMN = columnIndex('atsDictionary');
+const WIRING_COLUMN = columnIndex('wiring');
+const PROPOSED_METER_COLUMN = columnIndex('proposedMeterType');
 /// Колонки, что не уезжают при прокрутке вбок: пустая, № и наименование ТИ.
-const STICKY_COLUMNS = [0, 1, 2];
+/// SurveyTable делает липкими первые показанные колонки — эти должны стоять
+/// в tableColumns первыми.
+const STICKY_COLUMNS = ['rowHandle', 'number', 'name'].map(columnIndex);
 
 /// Статус ТИ в таблице — точкой: серая — в работе, зелёная — готово,
 /// оранжевая — внимание.
@@ -110,22 +101,37 @@ type CheckStatus = { ok: boolean; error?: string };
 /// и IP — общие на группу (ячейка объединена на группу), остальное — своё у
 /// каждой ТИ. Статус, Uном, схема, замена и RS-485 —
 /// перечисления и да/нет: текст ячейки разбирают parse* из survey-ti.
-const EDITABLE_COLUMNS: Partial<Record<number, SurveyField>> = {
-  1: 'number',
-  2: 'name',
-  3: 'status',
-  4: 'uNom',
-  5: 'meterType',
-  7: 'needsReplacement',
-  8: 'wiring',
-  9: 'proposedMeterType',
-  10: 'existingPolling',
-  11: 'freeRs485',
-  12: 'technicalSolution',
-  13: 'modemImei',
-  14: 'ip',
-  15: 'connectAddress',
+const EDITABLE_FIELDS: Record<string, SurveyField> = {
+  number: 'number',
+  name: 'name',
+  status: 'status',
+  uNom: 'uNom',
+  meterType: 'meterType',
+  needsReplacement: 'needsReplacement',
+  wiring: 'wiring',
+  proposedMeterType: 'proposedMeterType',
+  existingPolling: 'existingPolling',
+  freeRs485: 'freeRs485',
+  technicalSolution: 'technicalSolution',
+  modemImei: 'modemImei',
+  ip: 'ip',
+  meterAddress: 'connectAddress',
 };
+/// То же по индексу колонки в tableColumns.
+const EDITABLE_COLUMNS: Partial<Record<number, SurveyField>> =
+  Object.fromEntries(
+    Object.entries(EDITABLE_FIELDS).map(([id, field]) => [
+      columnIndex(id),
+      field,
+    ]),
+  );
+/// Колонки, где в режиме правки можно выделять ячейки, — правимые, слева
+/// направо. Выделение одно на таблицу — клик в другой колонке переносит его
+/// туда. В режиме просмотра клик выделяет строку целиком. «Соотв. по
+/// справочнику АТС» не выделяется: её не правят, она считается по типу ПУ.
+const SELECTABLE_COLUMNS = Object.keys(EDITABLE_COLUMNS)
+  .map(Number)
+  .sort((first, second) => first - second);
 
 /// Поля, значение которых в режиме правки выбирают из списка (CellChoice), а
 /// не набирают. Вставка и Delete работают в них так же, как в остальных.
@@ -378,7 +384,7 @@ export function SurveyView({
 }: {
   projectId: string;
   tis: SurveyTi[];
-  /// Остальные данные ТИ по id — для колонок tiDetailsColumns.
+  /// Остальные данные ТИ по id — для колонок сверх опроса (tableColumns).
   details: Record<string, TiDetails>;
   /// IMEI свободных модемов проекта — варианты для ячейки «IMEI модема».
   freeModemImeis: string[];
@@ -458,17 +464,7 @@ export function SurveyView({
   const rows = useMemo(
     () =>
       optimisticTis.length > 0
-        ? (() => {
-            const detailRows = tiDetailsCells(
-              optimisticTis.map((ti) => ti.id),
-              optimisticTis.map((ti) => ti.group?.id ?? null),
-              details,
-            );
-
-            return surveyTiCells(optimisticTis, connectedTexts).map(
-              (row, index) => [...row, ...detailRows[index]],
-            );
-          })()
+        ? tableRows(optimisticTis, details, connectedTexts)
         : [emptyRow(columns)],
     [optimisticTis, connectedTexts, details],
   );
@@ -722,7 +718,7 @@ export function SurveyView({
   function goToRow(row: number) {
     selectRow(row);
     document
-      .querySelector(`[data-row-cell="${row}:0"]`)
+      .querySelector(`[data-row-cell="${row}:${ROW_HANDLE_COLUMN}"]`)
       ?.scrollIntoView({ block: 'nearest' });
   }
 
@@ -968,7 +964,7 @@ export function SurveyView({
 
     const props = selection.cellProps(row, col);
 
-    if (col === 0) {
+    if (col === ROW_HANDLE_COLUMN) {
       const rowProps = rowCellProps(row, col);
 
       if (!rowProps) return rowProps;

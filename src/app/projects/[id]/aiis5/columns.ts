@@ -2,20 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import type { SurveyColumn } from '@/app/projects/[id]/aiis2/survey-data';
-import { surveyTiColumns } from '@/lib/survey-ti';
+import { tableColumns } from './ti-details';
 
-import { tiDetailsColumns } from './ti-details';
-
-/// Колонка таблицы aiis5 с тем, что нужно для выбора колонок: id —
-/// постоянное имя (по нему запоминаем скрытые; заголовки повторяются —
-/// «фаза», «№ сч.»), group — раздел в меню «Колонки».
-export type TableColumn = SurveyColumn & {
-  id: string;
-  group: ColumnGroup;
-  /// false — колонку не скрыть.
-  hideable?: boolean;
-};
+/// Сами колонки, их порядок и ячейки — в ./ti-details.ts.
+export { tableColumns, type TableColumn } from './ti-details';
 
 /// Разделы меню «Колонки» — в этом порядке.
 export const columnGroups = {
@@ -32,53 +22,15 @@ export const columnGroups = {
 
 export type ColumnGroup = keyof typeof columnGroups;
 
-/// id и раздел колонок опроса — по индексу в surveyTiColumns. Сами колонки
-/// общие с aiis4 (src/lib/survey-ti.ts), поэтому id им даём здесь.
-const surveyColumnMeta: Pick<TableColumn, 'id' | 'group' | 'hideable'>[] = [
-  /// Колонка выделения строк: за неё же цепляется переход к строке
-  /// (data-row-cell …:0), поэтому её не скрыть.
-  { id: 'rowHandle', group: 'ti', hideable: false },
-  { id: 'number', group: 'ti' },
-  { id: 'name', group: 'ti' },
-  { id: 'status', group: 'ti' },
-  { id: 'uNom', group: 'ti' },
-  { id: 'meterType', group: 'meter' },
-  { id: 'atsDictionary', group: 'meter' },
-  { id: 'needsReplacement', group: 'meter' },
-  { id: 'wiring', group: 'meter' },
-  { id: 'proposedMeterType', group: 'proposed' },
-  { id: 'existingPolling', group: 'polling' },
-  { id: 'freeRs485', group: 'polling' },
-  { id: 'technicalSolution', group: 'polling' },
-  { id: 'modemImei', group: 'link' },
-  { id: 'ip', group: 'link' },
-  { id: 'meterAddress', group: 'meter' },
-  { id: 'connected', group: 'link' },
-];
-
-if (surveyColumnMeta.length !== surveyTiColumns.length) {
-  throw new Error(
-    'aiis5/columns.ts: surveyColumnMeta не совпадает с surveyTiColumns',
-  );
-}
-
-/// Все колонки таблицы: опрос, как в aiis4, и за ним — остальные данные ТИ.
-/// Порядок здесь — порядок ячеек в строке; индексы колонок опроса в
-/// SurveyView (SOLUTION_COLUMN и др.) считаются по нему.
-export const tableColumns: TableColumn[] = [
-  ...surveyTiColumns.map((column, index) => ({
-    ...column,
-    ...surveyColumnMeta[index],
-  })),
-  ...tiDetailsColumns,
-];
-
 /// Готовые наборы колонок: что скрыть.
 export const columnPresets: { label: string; hidden: () => string[] }[] = [
   { label: 'Все колонки', hidden: () => [] },
   {
     label: 'Только опрос (как АИИС 4)',
-    hidden: () => tiDetailsColumns.map((column) => column.id),
+    hidden: () =>
+      tableColumns
+        .filter((column) => !column.survey)
+        .map((column) => column.id),
   },
   {
     label: 'Оборудование',
