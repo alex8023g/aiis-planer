@@ -17,6 +17,7 @@ const pageTitles = {
   aiis2: 'АИИС 2',
   aiis3: 'АИИС 3',
   aiis4: 'АИИС 4',
+  aiis5: 'АИИС 5',
   users: 'Пользователи',
   contracts: 'Договоры',
   tenders: 'Конкурсы',
@@ -59,7 +60,9 @@ export function Header({
 }) {
   const projectsNearHome =
     current === 'project' ||
+    current === 'aiis3' ||
     current === 'aiis4' ||
+    current === 'aiis5' ||
     current === 'meterreader' ||
     current === 'specification' ||
     current === 'pnr' ||
