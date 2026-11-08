@@ -107,6 +107,7 @@ const EDITABLE_FIELDS: Record<string, SurveyField> = {
   status: 'status',
   uNom: 'uNom',
   meterType: 'meterType',
+  meterNumber: 'meterNumber',
   needsReplacement: 'needsReplacement',
   wiring: 'wiring',
   proposedMeterType: 'proposedMeterType',
@@ -158,6 +159,8 @@ function fieldValue(ti: SurveyTi | undefined, col: number): string {
       return ti.uNom ? voltageClassLabels[ti.uNom] : '';
     case 'meterType':
       return ti.currentMeter?.type ?? '';
+    case 'meterNumber':
+      return ti.currentMeter?.number ?? '';
     case 'needsReplacement':
       return yesNo(ti.currentMeter?.needsReplacement)?.v ?? '';
     case 'wiring':
@@ -244,6 +247,22 @@ function applyEdits(tis: SurveyTi[], edits: SurveyEdit[]): SurveyTi[] {
             inAtsDictionary: null,
             atsDictionaryReason: null,
             atsWiring: null,
+          },
+        });
+        break;
+      case 'meterNumber':
+        /// Счётчика ещё нет — экшен заведёт его без типа: до ответа сервера
+        /// показываем так же.
+        patchTi(ti, {
+          currentMeter: {
+            type: null,
+            isCompliant: null,
+            needsReplacement: null,
+            inAtsDictionary: null,
+            atsDictionaryReason: null,
+            atsWiring: null,
+            ...currentMeterOf(ti),
+            number: trimmed,
           },
         });
         break;

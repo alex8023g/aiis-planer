@@ -185,6 +185,7 @@ export type SurveyField =
   | 'connectAddress'
   | 'technicalSolution'
   | 'meterType'
+  | 'meterNumber'
   | 'uNom'
   | 'wiring'
   | 'needsReplacement'
@@ -208,6 +209,7 @@ const FIELDS = new Set<string>([
   'connectAddress',
   'technicalSolution',
   'meterType',
+  'meterNumber',
   'uNom',
   'wiring',
   'needsReplacement',
@@ -221,8 +223,8 @@ const FIELDS = new Set<string>([
 const MAX_EDITS = 2000;
 /// Записать правки ячеек таблицы опроса — одну (правка ячейки) или пачку
 /// (вставка из буфера). Каждое поле живёт в своей таблице:
-/// наименование — в Ti, адрес — в счётчике, что стоит сейчас (заводится при
-/// первой записи), Uном, схема, существующий опрос и RS-485 — тоже в Ti,
+/// наименование — в Ti, адрес и заводской номер — в счётчике, что стоит
+/// сейчас (заводится при первой записи), Uном, схема, существующий опрос и RS-485 — тоже в Ti,
 /// порт — в модеме группы, IP — в SIM-карте модема группы,
 /// тех. решение — в TechnicalSolution группы, тип ПУ и замена — в счётчиках
 /// ТИ, что стоит сейчас и что ставим (заводятся при первой записи),
@@ -327,6 +329,16 @@ export async function updateSurveyCells(
           where: { tiId_state: { tiId, state } },
           create: { tiId, state, meterAddress: nullable },
           update: { meterAddress: nullable },
+        });
+      } else if (field === 'meterNumber') {
+        /// Заводской номер — у счётчика, что стоит сейчас (заводится при
+        /// первой записи, как и адрес).
+        const state = EquipmentState.current;
+
+        await tx.meter.upsert({
+          where: { tiId_state: { tiId, state } },
+          create: { tiId, state, number: nullable },
+          update: { number: nullable },
         });
       } else if (field === 'uNom') {
         /// Разбор уже проверен (invalidValueError) — undefined здесь нет.

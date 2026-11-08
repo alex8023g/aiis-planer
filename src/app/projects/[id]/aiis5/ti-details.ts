@@ -253,7 +253,9 @@ export const tableColumns: TableColumn[] = [
     minWidth: 120,
     id: 'meterNumber',
     group: 'meter',
-    cell: ({ details }) => text(details?.currentMeter?.number),
+    /// Из SurveyTi, а не из TiDetails: номер правят в таблице, и правка
+    /// видна сразу, до ответа сервера (applyEdits в SurveyView).
+    cell: ({ ti }) => text(ti.currentMeter?.number),
   },
   {
     title: 'соотв. по справоч АТС',
