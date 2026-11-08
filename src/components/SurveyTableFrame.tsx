@@ -13,10 +13,14 @@ import { cn } from '@/lib/utils';
 /// CSS-переменные --sticky-left-N на таблице (см. stickyLeft в SurveyTable).
 export function SurveyTableFrame({
   stickyColumns,
+  measureKey,
   className,
   children,
 }: {
   stickyColumns: number;
+  /// Меняется, когда липкими становятся другие колонки при том же их числе
+  /// (скрыли одну из них): тогда замер надо повесить на новые заголовки.
+  measureKey?: string;
   className?: string;
   children: ReactNode;
 }) {
@@ -46,7 +50,7 @@ export function SurveyTableFrame({
     update();
 
     return () => observer.disconnect();
-  }, [stickyColumns]);
+  }, [stickyColumns, measureKey]);
 
   return (
     <div

@@ -21,6 +21,7 @@ type AiisProject = {
 /// Разделы проекта, между которыми переключается шапка: `/projects/{id}/{slug}`.
 const sections = [
   { slug: 'aiis4', title: 'АИИС 4' },
+  { slug: 'aiis5', title: 'АИИС 5' },
   { slug: 'meter-reader', title: 'MeterReader' },
   { slug: 'specification', title: 'Спецификация' },
   { slug: 'pnr', title: 'ПНР' },

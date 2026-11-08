@@ -102,6 +102,7 @@ export type SurveyRowProps = HTMLAttributes<HTMLTableRowElement>;
 export function SurveyTable({
   columns,
   rows,
+  visibleColumns,
   stickyColumns = 0,
   mergedBorders = false,
   verticalAlign = 'top',
@@ -111,8 +112,13 @@ export function SurveyTable({
 }: {
   columns: SurveyColumn[];
   rows: SurveyCell[][];
+  /// Какие колонки показывать и в каком порядке — индексы в columns. Не
+  /// задано — все по порядку. cellProps получает индекс колонки в columns, а
+  /// не на экране: вызывающему не нужно пересчитывать свои номера колонок,
+  /// когда часть их скрыта.
+  visibleColumns?: number[];
   /// Сколько колонок слева не уезжает при прокрутке вбок. Считаются по
-  /// индексу ячейки в строке, поэтому colSpan в них не годится.
+  /// показанным колонкам, поэтому colSpan в них не годится.
   stickyColumns?: number;
   /// Выделять ли объединённые ячейки жирными верхом и низом.
   /// Жирная граница строк вокруг объединённых ячеек — во всю ширину
@@ -133,16 +139,28 @@ export function SurveyTable({
   /// шапкой, и сама себя по экрану не режет.
   className?: string;
 }) {
-  const boundaries = mergedBorders ? groupBoundaries(rows) : null;
-  const grouped = mergedBorders ? groupedRows(rows) : null;
+  const order = visibleColumns ?? columns.map((_, index) => index);
+  const shownColumns = order.map((col) => columns[col]);
+  /// Границы групп — только по показанным ячейкам: объединение в скрытой
+  /// колонке не должно чертить границу через всю таблицу.
+  const shownRows = visibleColumns
+    ? rows.map((row) => order.map((col) => row[col]))
+    : rows;
+  const boundaries = mergedBorders ? groupBoundaries(shownRows) : null;
+  const grouped = mergedBorders ? groupedRows(shownRows) : null;
 
   return (
-    <SurveyTableFrame stickyColumns={stickyColumns} className={className}>
+    <SurveyTableFrame
+      stickyColumns={stickyColumns}
+      measureKey={order.slice(0, stickyColumns).join(',')}
+      className={className}
+    >
       {/* Заголовки липнут к верху прокрутки: таблица длинная, и без них к
           середине уже не понять, что в колонке. */}
       <thead className='sticky top-0 z-10 text-xs text-neutral-500 dark:text-neutral-400'>
         <tr className='border-b border-neutral-200 dark:border-neutral-800'>
-          {columns.map((column, index) => {
+          {order.map((col, index) => {
+            const column = columns[col];
             const sticky = index < stickyColumns;
 
             return (
@@ -151,10 +169,10 @@ export function SurveyTable({
               /// Chrome под липким заголовком не рисует, и сквозь него видно
               /// уезжающие строки.
               <ResizableHeaderCell
-                key={index}
+                key={col}
                 minWidth={column.minWidth}
                 resizable={column.resizable}
-                style={sticky ? stickyStyle(columns, index) : undefined}
+                style={sticky ? stickyStyle(shownColumns, index) : undefined}
                 className={cn(
                   'bg-white px-4 py-3 align-bottom font-medium dark:bg-neutral-900',
                   column.compact && 'px-2',
@@ -190,28 +208,32 @@ export function SurveyTable({
                   'border-t-2 border-t-neutral-400 dark:border-t-neutral-600',
               )}
             >
-              {row.map((cell, columnIndex) => {
+              {order.map((col, columnIndex) => {
+                const cell = row[col];
+
                 /// Накрытую объединением ячейку не рисуем совсем — иначе строка
                 /// разъедется вправо на ширину лишней колонки.
-                if (cell === null) return null;
+                if (cell === null || cell === undefined) return null;
 
                 const sticky = columnIndex < stickyColumns;
-                const extra = cellProps?.(rowIndex, columnIndex);
+                const extra = cellProps?.(rowIndex, col);
 
                 return (
                   <td
                     {...extra}
-                    key={columnIndex}
+                    key={col}
                     rowSpan={cell.rowSpan}
                     colSpan={cell.colSpan}
                     style={
-                      sticky ? stickyStyle(columns, columnIndex) : undefined
+                      sticky
+                        ? stickyStyle(shownColumns, columnIndex)
+                        : undefined
                     }
                     /// Переносы строк внутри ячейки значимы: в опросе ими
                     /// разделены варианты решения.
                     className={cn(
                       'px-4 py-2 whitespace-pre-line',
-                      columns[columnIndex]?.compact && 'px-2',
+                      columns[col]?.compact && 'px-2',
                       (cell.align ?? verticalAlign) === 'middle'
                         ? 'align-middle'
                         : 'align-top',
