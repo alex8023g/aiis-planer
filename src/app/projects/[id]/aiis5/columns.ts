@@ -22,6 +22,16 @@ export const columnGroups = {
 
 export type ColumnGroup = keyof typeof columnGroups;
 
+/// Скрыть всё, кроме этих колонок. № и наименование ТИ остаются всегда —
+/// иначе не понять, чья строка.
+function showOnly(ids: string[]): string[] {
+  const shown = new Set(['number', 'name', ...ids]);
+
+  return tableColumns
+    .filter((column) => !shown.has(column.id))
+    .map((column) => column.id);
+}
+
 /// Готовые наборы колонок: что скрыть.
 export const columnPresets: { label: string; hidden: () => string[] }[] = [
   { label: 'Все колонки', hidden: () => [] },
@@ -43,6 +53,32 @@ export const columnPresets: { label: string; hidden: () => string[] }[] = [
             ) && column.id !== 'name',
         )
         .map((column) => column.id),
+  },
+  {
+    label: 'Узел учёта',
+    hidden: () =>
+      showOnly([
+        'meterType',
+        'meterNumber',
+        'ttType',
+        'ttNumber',
+        'ttRatio',
+        'tnType',
+        'tnNumber',
+        'tnRatio',
+      ]),
+  },
+  {
+    label: 'Опрос',
+    hidden: () =>
+      showOnly([
+        'meterType',
+        'meterNumber',
+        'meterAddress',
+        'modemImei',
+        'ip',
+        'connected',
+      ]),
   },
   {
     label: 'Связь',
