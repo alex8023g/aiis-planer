@@ -212,6 +212,38 @@ export function parseYesNo(value: string): boolean | null | undefined {
   return undefined;
 }
 
+/// Марки трансформатора по фазам A, B, C.
+export type PhaseTypes = [string | null, string | null, string | null];
+
+/// Пустая фаза в тексте ячейки: так её показывает таблица (прочерк) или
+/// просто ничего.
+const EMPTY_PHASE = new Set(['', '—', '-', '–']);
+
+/// Марки ТН для правки ячейки — как в таблице: всегда три строки, A, B, C,
+/// пустая фаза — прочерком. Пусто — ТН нет или все фазы пустые.
+export function phaseTypesText(types: PhaseTypes | null | undefined): string {
+  if (!types || types.every((type) => type === null)) return '';
+
+  return types.map((type) => type ?? '—').join('\n');
+}
+
+/// Марки ТН из текста ячейки: строка на фазу (A, B, C); «;» тоже разделяет —
+/// так удобнее вставлять одной строкой. Прочерк — пустая фаза, недостающие
+/// фазы — тоже пустые. undefined — фаз больше трёх.
+export function parsePhaseTypes(value: string): PhaseTypes | undefined {
+  const parts = value
+    .split(/[;\n]/)
+    .map((part) => part.trim())
+    .map((part) => (EMPTY_PHASE.has(part) ? null : part));
+
+  /// Хвостовые пустые фазы ничего не меняют: «ЗНОЛ;» — то же, что «ЗНОЛ».
+  while (parts.length > 1 && parts[parts.length - 1] === null) parts.pop();
+
+  if (parts.length > 3) return undefined;
+
+  return [parts[0] ?? null, parts[1] ?? null, parts[2] ?? null];
+}
+
 /// Почему текст не годится для поля-перечисления (Uном, схема, да/нет); null
 /// — годится, или поле текстовое. Одна проверка на клиент и экшен: клиент
 /// показывает ошибку сразу, экшен — на случай вызова в обход таблицы.
@@ -235,6 +267,10 @@ export function invalidValueError(field: string, value: string): string | null {
     case 'needsReplacement':
       return parseYesNo(value) === undefined
         ? `${shown} — не «да» и не «нет»`
+        : null;
+    case 'tnType':
+      return parsePhaseTypes(value) === undefined
+        ? `${shown} — фаз больше трёх (по строке на фазу: A, B, C)`
         : null;
     default:
       return null;

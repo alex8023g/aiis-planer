@@ -18,6 +18,7 @@ import {
   NO_PROPOSED_METER,
   invalidValueError,
   modemImeiText,
+  parsePhaseTypes,
   parseTiStatus,
   parseVoltageClass,
   parseWiringScheme,
@@ -191,7 +192,8 @@ export type SurveyField =
   | 'needsReplacement'
   | 'existingPolling'
   | 'freeRs485'
-  | 'proposedMeterType';
+  | 'proposedMeterType'
+  | 'tnType';
 
 export type SurveyEdit = {
   tiId: string;
@@ -216,6 +218,7 @@ const FIELDS = new Set<string>([
   'existingPolling',
   'freeRs485',
   'proposedMeterType',
+  'tnType',
 ]);
 
 /// Больше разом не пишем: вставка целой простыни из буфера по ошибке иначе
@@ -368,6 +371,21 @@ export async function updateSurveyCells(
           create: { tiId, state, needsReplacement },
           update: { needsReplacement },
         });
+      } else if (field === 'tnType') {
+        /// Марки ТН по фазам. ТН у ТИ один (см. getTiDetails) — правим его,
+        /// а нет — заводим, но только ради непустой марки.
+        const [typeA, typeB, typeC] = parsePhaseTypes(value)!;
+        const data = { typeA, typeB, typeC };
+        const tn = await tx.tn.findFirst({
+          where: { tiId },
+          select: { id: true },
+        });
+
+        if (tn) {
+          await tx.tn.update({ where: { id: tn.id }, data });
+        } else if (typeA !== null || typeB !== null || typeC !== null) {
+          await tx.tn.create({ data: { tiId, ...data } });
+        }
       } else if (field === 'existingPolling') {
         await tx.ti.update({
           where: { id: tiId },

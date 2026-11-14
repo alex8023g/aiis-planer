@@ -240,14 +240,20 @@ export function useCellSelection({
 
   /// Свойства ячеек для SurveyTable.cellProps: только у выделяемых колонок.
   /// Таблица зовёт его только для нарисованных ячеек — у объединённой это её
-  /// первая строка.
-  function cellProps(row: number, col: number): SurveyCellProps | undefined {
+  /// первая строка. highlight = false — ячейку не подсвечивать, даже
+  /// выделенную: выделение внутри неё рисует сам вызывающий (фаза ТН).
+  function cellProps(
+    row: number,
+    col: number,
+    highlight = true,
+  ): SurveyCellProps | undefined {
     const cellExtent = extents.get(col);
 
     if (!cellExtent || last < 0) return undefined;
 
     const end = cellExtent.end[row];
     const selected =
+      highlight &&
       range !== null &&
       range.col === col &&
       row <= range.bottom &&

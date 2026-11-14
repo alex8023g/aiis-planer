@@ -20,6 +20,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
   type MouseEvent,
+  type ReactNode,
 } from 'react';
 
 import { CellChoice, type CellChoiceOption } from '@/components/CellChoice';
@@ -40,10 +41,12 @@ import {
   NO_PROPOSED_METER,
   invalidValueError,
   modemImeiText,
+  parsePhaseTypes,
   parseTiStatus,
   parseVoltageClass,
   parseWiringScheme,
   parseYesNo,
+  phaseTypesText,
   suggestedWiring,
   tiStatusLabels,
   wiringLabels,
@@ -81,6 +84,10 @@ const STATUS_COLUMN = columnIndex('status');
 const ATS_DICTIONARY_COLUMN = columnIndex('atsDictionary');
 const WIRING_COLUMN = columnIndex('wiring');
 const PROPOSED_METER_COLUMN = columnIndex('proposedMeterType');
+/// Пофазные колонки: ячейка — по элементу на фазу (A, B, C), выделяют и
+/// правят фазу, а не ячейку (renderPhases).
+const PHASE_COLUMNS = new Set([columnIndex('tnType')]);
+const PHASE_LABELS = ['A', 'B', 'C'] as const;
 /// Колонки, что не уезжают при прокрутке вбок: пустая, № и наименование ТИ.
 /// SurveyTable делает липкими первые показанные колонки — эти должны стоять
 /// в tableColumns первыми.
@@ -117,6 +124,9 @@ const EDITABLE_FIELDS: Record<string, SurveyField> = {
   modemImei: 'modemImei',
   ip: 'ip',
   meterAddress: 'connectAddress',
+  /// Марки ТН по фазам — в TiDetails, а не в SurveyTi: правка видна до
+  /// ответа сервера через applyDetailEdits. Правят три строки, A, B, C.
+  tnType: 'tnType',
 };
 /// То же по индексу колонки в tableColumns.
 const EDITABLE_COLUMNS: Partial<Record<number, SurveyField>> =
@@ -145,10 +155,16 @@ const FIELD_CHOICES: Partial<Record<SurveyField, CellChoiceOption[]>> = {
 };
 
 /// Значение правимой ячейки так, как его показывает таблица.
-function fieldValue(ti: SurveyTi | undefined, col: number): string {
+function fieldValue(
+  ti: SurveyTi | undefined,
+  details: TiDetails | undefined,
+  col: number,
+): string {
   if (!ti) return '';
 
   switch (EDITABLE_COLUMNS[col]) {
+    case 'tnType':
+      return phaseTypesText(details?.tn?.type);
     case 'number':
       return ti.number;
     case 'name':
@@ -180,6 +196,37 @@ function fieldValue(ti: SurveyTi | undefined, col: number): string {
     default:
       return ti.meterAddress ?? '';
   }
+}
+
+/// Правки поверх TiDetails — то же, что applyEdits, для полей, которых нет в
+/// SurveyTi. Сейчас это марки ТН: ТН ещё нет — заводим пустой, как экшен.
+function applyDetailEdits(
+  details: Record<string, TiDetails>,
+  edits: SurveyEdit[],
+): Record<string, TiDetails> {
+  let next = details;
+
+  for (const { tiId, field, value } of edits) {
+    const current = next[tiId];
+
+    if (field !== 'tnType' || !current) continue;
+
+    const type = parsePhaseTypes(value);
+
+    if (!type) continue;
+
+    const tn = current.tn ?? {
+      type: [null, null, null],
+      number: [null, null, null],
+      ratio: null,
+      dateInstalled: null,
+      dateRemoved: null,
+    };
+
+    next = { ...next, [tiId]: { ...current, tn: { ...tn, type } } };
+  }
+
+  return next;
 }
 
 type GroupPatch = {
@@ -421,6 +468,10 @@ export function SurveyView({
   /// панели показывали бы «Добавляем…».
   const [, startSaveTransition] = useTransition();
   const [optimisticTis, addEdits] = useOptimistic(tis, applyEdits);
+  const [optimisticDetails, addDetailEdits] = useOptimistic(
+    details,
+    applyDetailEdits,
+  );
   /// Какие колонки показаны — меню «Колонки». Индексы колонок здесь везде
   /// в tableColumns, а не на экране: скрытие их не сдвигает.
   const { hidden, visibleColumns, setVisible, setHiddenIds } =
@@ -436,7 +487,13 @@ export function SurveyView({
     row: number;
     col: number;
     initial: string;
+    /// Пофазная ячейка правится по фазе: какую (0 — A). initial — текст
+    /// этой фазы.
+    phase?: number;
   } | null>(null);
+  /// Фаза (0 — A, 1 — B, 2 — C), выделенная в пофазной ячейке, когда
+  /// выделена одна такая ячейка: клик и стрелки выделяют фазу, а не ячейку.
+  const [phase, setPhase] = useState(0);
   /// Выделенные строки — ТИ целиком; с Ctrl (⌘) кликом выделяют несколько.
   /// active — последняя выбранная: от неё ходят стрелками. В режиме правки
   /// строки выделяют кликом в первую колонку (для удаления), а в остальных —
@@ -483,9 +540,9 @@ export function SurveyView({
   const rows = useMemo(
     () =>
       optimisticTis.length > 0
-        ? tableRows(optimisticTis, details, connectedTexts)
+        ? tableRows(optimisticTis, optimisticDetails, connectedTexts)
         : [emptyRow(columns)],
-    [optimisticTis, connectedTexts, details],
+    [optimisticTis, connectedTexts, optimisticDetails],
   );
   console.log('🚀 ~ SurveyView ~ rows:', rows);
   /// Ячейки наименования ТИ, тех. решения и опроса можно выделять, как в Excel. Пустая таблица (одна
@@ -541,6 +598,7 @@ export function SurveyView({
     /// перехода.
     startSaveTransition(async () => {
       addEdits(edits);
+      addDetailEdits(edits);
       const result = await updateSurveyCells(projectId, edits);
 
       if (!result.ok) setError(result.error);
@@ -567,7 +625,95 @@ export function SurveyView({
   }
 
   function valueAt(row: number, col: number): string {
-    return fieldValue(optimisticTis[row], col);
+    const ti = optimisticTis[row];
+
+    return fieldValue(ti, ti && optimisticDetails[ti.id], col);
+  }
+
+  /// Значения фаз A, B, C пофазной ячейки; пустая фаза — ''.
+  function phaseValues(row: number, col: number): string[] {
+    const lines = valueAt(row, col).split('\n');
+
+    return PHASE_LABELS.map((_, index) => {
+      const line = (lines[index] ?? '').trim();
+
+      return line === '—' ? '' : line;
+    });
+  }
+
+  /// Текст пофазной ячейки, где одна фаза заменена: той же формы, что
+  /// valueAt (по строке на фазу, пустая — прочерком; все пустые — '').
+  function withPhase(
+    row: number,
+    col: number,
+    index: number,
+    value: string,
+  ): string {
+    const phases = phaseValues(row, col).map((item, at) =>
+      at === index ? value.trim() : item,
+    );
+
+    return phases.every((item) => item === '')
+      ? ''
+      : phases.map((item) => item || '—').join('\n');
+  }
+
+  /// Выделена ли ровно эта пофазная ячейка, одна: тогда выделение — по фазе.
+  function phaseFocusedAt(row: number, col: number): boolean {
+    const range = selection.range;
+
+    return (
+      PHASE_COLUMNS.has(col) &&
+      range !== null &&
+      range.col === col &&
+      range.cells === 1 &&
+      range.top === row
+    );
+  }
+
+  /// Начать правку ячейки: с её текста или с набранного символа (typed).
+  /// Пофазную — только выделенную фазу.
+  function startEditing(row: number, col: number, typed?: string) {
+    if (PHASE_COLUMNS.has(col)) {
+      setEditing({
+        row,
+        col,
+        phase,
+        initial: typed ?? phaseValues(row, col)[phase],
+      });
+    } else {
+      setEditing({ row, col, initial: typed ?? valueAt(row, col) });
+    }
+  }
+
+  /// Фазы пофазной ячейки — по элементу на фазу. Выделенная фаза
+  /// подсвечена; editor — поле правки на её месте. В ячейке без значений
+  /// фазы пустые, а не прочерки: прочерк говорил бы, что ТН есть.
+  function renderPhases(row: number, col: number, editor?: ReactNode) {
+    const values = phaseValues(row, col);
+    const empty = values.every((value) => value === '');
+    const focused = editable && phaseFocusedAt(row, col);
+
+    return (
+      <div className='-mx-1 flex flex-col'>
+        {PHASE_LABELS.map((label, index) => (
+          <div
+            key={label}
+            data-phase={index}
+            className={cn(
+              'px-1',
+              focused &&
+                index === phase &&
+                'bg-blue-50 shadow-[inset_0_0_0_2px_var(--color-blue-500)] dark:bg-blue-950 dark:shadow-[inset_0_0_0_2px_var(--color-blue-400)]',
+            )}
+          >
+            {editor && index === phase
+              ? editor
+              : values[index] || (empty ? ' ' : '—')}
+          </div>
+        ))}
+      </div>
+    );
   }
 
   /// Варианты для ячейки со списком; undefined — ячейку набирают. IMEI модема
@@ -638,12 +784,43 @@ export function SurveyView({
 
     if (event.key === 'Enter' || event.key === 'F2') {
       event.preventDefault();
-      setEditing({ row, col, initial: valueAt(row, col) });
+      startEditing(row, col);
       return true;
+    }
+
+    /// Стрелки в пофазной ячейке шагают по фазам; с крайней фазы — в
+    /// соседнюю ячейку, на её ближнюю фазу. С Shift — выделение ячеек.
+    if (
+      PHASE_COLUMNS.has(col) &&
+      !event.shiftKey &&
+      (event.key === 'ArrowDown' || event.key === 'ArrowUp')
+    ) {
+      const down = event.key === 'ArrowDown';
+
+      if (phaseFocusedAt(row, col)) {
+        const next = phase + (down ? 1 : -1);
+
+        if (next >= 0 && next < PHASE_LABELS.length) {
+          event.preventDefault();
+          setPhase(next);
+          return true;
+        }
+      }
+
+      setPhase(down ? 0 : PHASE_LABELS.length - 1);
+      return false;
     }
 
     if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault();
+
+      /// Одна пофазная ячейка — очищаем только выделенную фазу.
+      if (phaseFocusedAt(row, col)) {
+        const value = withPhase(row, col, phase, '');
+
+        if (value !== valueAt(row, col)) save(edit(row, col, value));
+        return true;
+      }
 
       save(
         selectedCells(col)
@@ -656,11 +833,7 @@ export function SurveyView({
     if (event.key.length === 1) {
       event.preventDefault();
       /// В ячейке со списком набор открывает список: буква — не значение.
-      setEditing({
-        row,
-        col,
-        initial: choicesAt(row, col) ? valueAt(row, col) : event.key,
-      });
+      startEditing(row, col, choicesAt(row, col) ? undefined : event.key);
       return true;
     }
 
@@ -684,6 +857,21 @@ export function SurveyView({
     const values = parseClipboard(
       event.clipboardData.getData('text/plain'),
     ).map((line) => line[0] ?? '');
+
+    /// Одна строка в выделенную фазу — только в эту фазу. Ячейка Excel в
+    /// несколько строк ложится на все фазы, как обычно.
+    if (
+      phaseFocusedAt(range.top, col) &&
+      values.length === 1 &&
+      !values[0].includes('\n')
+    ) {
+      const value = withPhase(range.top, col, phase, values[0]);
+
+      if (value !== valueAt(range.top, col)) {
+        save(edit(range.top, col, value));
+      }
+      return;
+    }
     const targets =
       values.length === 1
         ? selectedCells(col).map((row) => [row, values[0]] as const)
@@ -885,6 +1073,19 @@ export function SurveyView({
       };
     }
 
+    /// Пофазная ячейка — по элементу на фазу A, B, C, а не одним текстом с
+    /// переводами строк. Текст ячейки (по строке на фазу) остаётся её
+    /// значением: его копируют и вставляют. В просмотре ячейка без ТН пустая;
+    /// в правке фазы есть всегда — их выделяют, чтобы заполнить.
+    if (
+      PHASE_COLUMNS.has(col) &&
+      ti &&
+      !props?.children &&
+      (editable || rows[row]?.[col]?.v)
+    ) {
+      return { ...props, children: renderPhases(row, col) };
+    }
+
     /// Статус — точкой вместо текста. Текст остаётся значением ячейки: его
     /// копируют, вставляют и правят, а подпись видна в подсказке.
     if (col === STATUS_COLUMN && ti && !props?.children) {
@@ -981,7 +1182,8 @@ export function SurveyView({
   ): SurveyCellProps | undefined {
     if (!editable) return rowCellProps(row, col);
 
-    const props = selection.cellProps(row, col);
+    /// Одна выделенная пофазная ячейка подсвечивает фазу, а не себя.
+    const props = selection.cellProps(row, col, !phaseFocusedAt(row, col));
 
     if (col === ROW_HANDLE_COLUMN) {
       const rowProps = rowCellProps(row, col);
@@ -1006,6 +1208,16 @@ export function SurveyView({
       'aria-selected': rowSelected || props['aria-selected'],
       onMouseDown: (event: MouseEvent<HTMLTableCellElement>) => {
         selectRow(null);
+
+        /// Клик по фазе выделяет её; мимо фаз (отступ ячейки) — фазу A.
+        if (PHASE_COLUMNS.has(col)) {
+          const target = (event.target as HTMLElement).closest<HTMLElement>(
+            '[data-phase]',
+          );
+
+          setPhase(Number(target?.dataset.phase ?? 0));
+        }
+
         props.onMouseDown?.(event);
       },
       className: cn(
@@ -1025,7 +1237,7 @@ export function SurveyView({
         if (!handleEditKeyDown(event, row, col)) props.onKeyDown?.(event);
       },
       onDoubleClick: () => {
-        if (!isEditing) setEditing({ row, col, initial: valueAt(row, col) });
+        if (!isEditing) startEditing(row, col);
       },
       /// Список открывается с одного клика: выбрать из трёх значений проще,
       /// чем сначала выделить ячейку. Клик с Shift, Ctrl (⌘) — по-прежнему
@@ -1048,6 +1260,22 @@ export function SurveyView({
           options={choices}
           onDone={finishEditing}
         />
+      ) : editing.phase !== undefined ? (
+        renderPhases(
+          row,
+          col,
+          <CellEditor
+            initial={editing.initial}
+            onDone={(value, refocus) =>
+              finishEditing(
+                value === null
+                  ? null
+                  : withPhase(row, col, editing.phase!, value),
+                refocus,
+              )
+            }
+          />,
+        )
       ) : (
         <CellEditor initial={editing.initial} onDone={finishEditing} />
       ),
