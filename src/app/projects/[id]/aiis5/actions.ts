@@ -7,7 +7,12 @@ import { promisify } from 'node:util';
 import { refresh } from 'next/cache';
 
 import type { Prisma } from '@/generated/prisma/client';
-import { Channel, EquipmentState, ModemKind } from '@/generated/prisma/enums';
+import {
+  Channel,
+  EquipmentState,
+  ModemKind,
+  TransformerState,
+} from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 import { getProject, requireProjectEditor } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
@@ -17,7 +22,12 @@ import {
   BUILT_IN_MODEM,
   NO_PROPOSED_METER,
   invalidValueError,
+  TRANSFORMER_FIELDS,
+  isTransformerAbsentInput,
+  transformerFieldOf,
+  type TransformerField,
   modemImeiText,
+  parsePhaseValues,
   parseTiStatus,
   parseVoltageClass,
   parseWiringScheme,
@@ -191,7 +201,8 @@ export type SurveyField =
   | 'needsReplacement'
   | 'existingPolling'
   | 'freeRs485'
-  | 'proposedMeterType';
+  | 'proposedMeterType'
+  | TransformerField;
 
 export type SurveyEdit = {
   tiId: string;
@@ -216,6 +227,7 @@ const FIELDS = new Set<string>([
   'existingPolling',
   'freeRs485',
   'proposedMeterType',
+  ...Object.keys(TRANSFORMER_FIELDS),
 ]);
 
 /// Больше разом не пишем: вставка целой простыни из буфера по ошибке иначе
@@ -368,6 +380,59 @@ export async function updateSurveyCells(
           create: { tiId, state, needsReplacement },
           update: { needsReplacement },
         });
+      } else if (transformerFieldOf(field)) {
+        /// ТТ и ТН — марки и номера по фазам, коэффициент одним значением.
+        /// Строки Tt и Tn есть у каждой ТИ (upsert — на случай ТИ, заведённой
+        /// в обход addTis).
+        const { transformer, part } = transformerFieldOf(field)!;
+        let data: Prisma.TtUncheckedUpdateInput & Prisma.TnUncheckedUpdateInput;
+
+        if (part === 'type' && isTransformerAbsentInput(value)) {
+          /// «-…» в марке — трансформатора нет (в номере дефис — просто
+          /// значение). Данные стираем все: «нет» с данными не пропустит
+          /// CHECK Tt_absent_is_empty / Tn_absent_is_empty.
+          data = {
+            state: TransformerState.absent,
+            typeA: null,
+            typeB: null,
+            typeC: null,
+            numberA: null,
+            numberB: null,
+            numberC: null,
+            ratio: null,
+            dateInstalled: null,
+            dateRemoved: null,
+          };
+        } else {
+          /// Значение — значит, трансформатор есть: state = present, иначе
+          /// «нет» с данными не пропустит CHECK. Стёртые значения состояние
+          /// не трогают: он есть, значение не выяснили.
+          let hasValue: boolean;
+
+          if (part === 'ratio') {
+            data = { ratio: nullable };
+            hasValue = nullable !== null;
+          } else {
+            const [a, b, c] = parsePhaseValues(value)!;
+
+            data =
+              part === 'type'
+                ? { typeA: a, typeB: b, typeC: c }
+                : { numberA: a, numberB: b, numberC: c };
+            hasValue = a !== null || b !== null || c !== null;
+          }
+
+          if (hasValue) data.state = TransformerState.present;
+        }
+
+        const create = { tiId, ...data } as Prisma.TtUncheckedCreateInput &
+          Prisma.TnUncheckedCreateInput;
+
+        if (transformer === 'tt') {
+          await tx.tt.upsert({ where: { tiId }, create, update: data });
+        } else {
+          await tx.tn.upsert({ where: { tiId }, create, update: data });
+        }
       } else if (field === 'existingPolling') {
         await tx.ti.update({
           where: { id: tiId },
@@ -520,6 +585,10 @@ export async function addTis(
           group: {
             create: { project: { connect: { id: projectId } } },
           },
+          /// Строки ТТ и ТН есть у каждой ТИ: есть ли они, пока не
+          /// выяснили.
+          tt: { create: {} },
+          tn: { create: {} },
         },
       });
     }

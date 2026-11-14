@@ -17,6 +17,7 @@ import type {
 import type {
   Channel as DbChannel,
   ModemKind as DbModemKind,
+  TransformerState as DbTransformerState,
 } from '@/generated/prisma/enums';
 import {
   cell,
@@ -27,6 +28,7 @@ import {
 } from '@/lib/survey-cells';
 import {
   NO_PROPOSED_METER,
+  TRANSFORMER_ABSENT,
   modemImeiText,
   suggestedWiring,
   tiStatusLabels,
@@ -60,6 +62,11 @@ export type TiDetails = {
   currentMeter: Meter | null;
   proposedMeter: Meter | null;
   removedMeter: (Meter & { type: string | null }) | null;
+  /// Есть ли у ТИ ТТ и ТН: unknown — не выяснили, absent — нет, present —
+  /// есть.
+  ttState: DbTransformerState;
+  tnState: DbTransformerState;
+  /// Данные ТТ и ТН; null — трансформатор не present (см. ttState, tnState).
   tt: Transformer | null;
   tn: Transformer | null;
   group: {
@@ -127,6 +134,8 @@ function date(value: string | null | undefined): SurveyCell {
 
 /// Пофазное значение — в три строки, прочерк у пустой фазы; пусто, если
 /// трансформатора на ТИ нет. Так же, как в таблице aiis3 (src/lib/tis.ts).
+/// Пофазные ячейки ТН SurveyView рисует сам, по элементу на фазу и без
+/// прочерков; этот текст у них — значение ячейки для копирования.
 function phaseCell(
   values: [string | null, string | null, string | null] | undefined,
 ): SurveyCell {
@@ -144,7 +153,7 @@ function transformerColumns(
 ): TableColumn[] {
   const of = (row: TiRow) => row.details?.[group] ?? null;
 
-  return [
+  const columns: TableColumn[] = [
     {
       title: 'фаза',
       minWidth: 50,
@@ -189,6 +198,19 @@ function transformerColumns(
       cell: (row) => date(of(row)?.dateRemoved),
     },
   ];
+
+  const state = group === 'tt' ? 'ttState' : 'tnState';
+
+  /// Трансформатора нет (state = absent) — во всех его колонках
+  /// TRANSFORMER_ABSENT: «нет» видно прямо, а пустая ячейка остаётся «не
+  /// выяснили».
+  return columns.map((column) => ({
+    ...column,
+    cell: (row) =>
+      row.details?.[state] === 'absent'
+        ? { v: TRANSFORMER_ABSENT }
+        : column.cell(row),
+  }));
 }
 
 /// Все колонки таблицы — в порядке на экране.

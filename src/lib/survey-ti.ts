@@ -100,6 +100,10 @@ export const surveyTiColumns: SurveyColumn[] = [
 /// прочерк — то же, что пустая ячейка.
 export const NO_PROPOSED_METER = '----';
 
+/// Все ячейки ТТ или ТН у ТИ, где его нет (state = absent): «нет» видно
+/// прямо, а не пустотой — пустая ячейка значит «не выяснили».
+export const TRANSFORMER_ABSENT = '---';
+
 /// «IMEI модема» у встроенного модема без IMEI: модем внутри счётчика, из
 /// свободных модемов проекта его не выбирают.
 export const BUILT_IN_MODEM = 'встроенный';
@@ -212,6 +216,72 @@ export function parseYesNo(value: string): boolean | null | undefined {
   return undefined;
 }
 
+/// Значения трансформатора по фазам A, B, C: марки или заводские номера.
+export type PhaseValues = [string | null, string | null, string | null];
+
+/// Пустая фаза в тексте ячейки: так её показывает таблица (прочерк) или
+/// просто ничего.
+const EMPTY_PHASE = new Set(['', '—', '-', '–']);
+
+/// Пофазные значения ТН (марки, номера) для правки ячейки — как в таблице:
+/// всегда три строки, A, B, C, пустая фаза — прочерком. Пусто — ТН нет или
+/// все фазы пустые.
+export function phaseValuesText(
+  values: PhaseValues | null | undefined,
+): string {
+  if (!values || values.every((value) => value === null)) return '';
+
+  return values.map((value) => value ?? '—').join('\n');
+}
+
+/// Правимые поля ТТ и ТН в таблице: какой трансформатор и что в нём —
+/// марки и номера по фазам (A, B, C), коэффициент одним значением.
+export const TRANSFORMER_FIELDS = {
+  ttType: { transformer: 'tt', part: 'type' },
+  ttNumber: { transformer: 'tt', part: 'number' },
+  ttRatio: { transformer: 'tt', part: 'ratio' },
+  tnType: { transformer: 'tn', part: 'type' },
+  tnNumber: { transformer: 'tn', part: 'number' },
+  tnRatio: { transformer: 'tn', part: 'ratio' },
+} as const;
+
+export type TransformerField = keyof typeof TRANSFORMER_FIELDS;
+
+/// Поле ТТ или ТН по имени поля; undefined — поле не трансформатора.
+export function transformerFieldOf(
+  field: string,
+): (typeof TRANSFORMER_FIELDS)[TransformerField] | undefined {
+  return Object.hasOwn(TRANSFORMER_FIELDS, field)
+    ? TRANSFORMER_FIELDS[field as TransformerField]
+    : undefined;
+}
+
+/// Текст ячейки «ТТ тип» или «ТН тип», который значит «трансформатора нет»
+/// (state = absent): начинается с дефиса — «-», «---» (TRANSFORMER_ABSENT,
+/// так ячейку и копируют). Только дефис: длинное тире «—» в тексте ячейки —
+/// пустая фаза. Только в марке: в номере дефис — просто значение
+/// (одиночный — пустая фаза).
+export function isTransformerAbsentInput(value: string): boolean {
+  return value.trim().startsWith('-');
+}
+
+/// Пофазные значения ТН из текста ячейки: строка на фазу (A, B, C); «;» тоже
+/// разделяет — так удобнее вставлять одной строкой. Прочерк — пустая фаза,
+/// недостающие фазы — тоже пустые. undefined — фаз больше трёх.
+export function parsePhaseValues(value: string): PhaseValues | undefined {
+  const parts = value
+    .split(/[;\n]/)
+    .map((part) => part.trim())
+    .map((part) => (EMPTY_PHASE.has(part) ? null : part));
+
+  /// Хвостовые пустые фазы ничего не меняют: «ЗНОЛ;» — то же, что «ЗНОЛ».
+  while (parts.length > 1 && parts[parts.length - 1] === null) parts.pop();
+
+  if (parts.length > 3) return undefined;
+
+  return [parts[0] ?? null, parts[1] ?? null, parts[2] ?? null];
+}
+
 /// Почему текст не годится для поля-перечисления (Uном, схема, да/нет); null
 /// — годится, или поле текстовое. Одна проверка на клиент и экшен: клиент
 /// показывает ошибку сразу, экшен — на случай вызова в обход таблицы.
@@ -236,8 +306,17 @@ export function invalidValueError(field: string, value: string): string | null {
       return parseYesNo(value) === undefined
         ? `${shown} — не «да» и не «нет»`
         : null;
-    default:
-      return null;
+    default: {
+      /// Марки и номера ТТ и ТН — по фазам; «-…» в марке — «нет», не фазы.
+      const part = transformerFieldOf(field)?.part;
+
+      if (part !== 'type' && part !== 'number') return null;
+      if (part === 'type' && isTransformerAbsentInput(value)) return null;
+
+      return parsePhaseValues(value) === undefined
+        ? `${shown} — фаз больше трёх (по строке на фазу: A, B, C)`
+        : null;
+    }
   }
 }
 

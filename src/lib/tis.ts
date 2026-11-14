@@ -2,7 +2,7 @@ import type {
   SurveyCell,
   SurveyColumn,
 } from '@/app/projects/[id]/aiis2/survey-data';
-import { EquipmentState } from '@/generated/prisma/enums';
+import { EquipmentState, TransformerState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 import { getMeterDictionaryChecker } from '@/lib/siDictionaryMatch';
 import {
@@ -13,7 +13,7 @@ import {
   voltageClassLabels,
   yesNo,
 } from '@/lib/survey-cells';
-import type { SurveyTi } from '@/lib/survey-ti';
+import { TRANSFORMER_ABSENT, type SurveyTi } from '@/lib/survey-ti';
 import { Channel, ModemKind } from '@/lib/types';
 
 /// Все поля ТИ, какие есть в схеме, — по колонке на поле. Пустых колонок тут
@@ -100,6 +100,38 @@ function phaseCell(
   return { v: PHASES.map((_, index) => values[index] ?? '—').join('\n') };
 }
 
+type DbTransformerRow = {
+  state: TransformerState;
+  typeA: string | null;
+  typeB: string | null;
+  typeC: string | null;
+  numberA: string | null;
+  numberB: string | null;
+  numberC: string | null;
+  ratio: string | null;
+};
+
+/// Ячейки ТТ или ТН: фаза, марка, номер, коэффициент. ТТ и ТН у ТИ по
+/// одному, и строка есть всегда; данные — только у трансформатора, который
+/// есть (state = present), «не выяснили» — пустые колонки, «нет» —
+/// TRANSFORMER_ABSENT во всех.
+function transformerCells(row: DbTransformerRow | null): SurveyCell[] {
+  if (row?.state === TransformerState.absent) {
+    return Array.from({ length: 4 }, () => text(TRANSFORMER_ABSENT));
+  }
+
+  const present = row?.state === TransformerState.present ? row : null;
+
+  return [
+    phaseLabels(present !== null),
+    phaseCell(present ? [present.typeA, present.typeB, present.typeC] : null),
+    phaseCell(
+      present ? [present.numberA, present.numberB, present.numberC] : null,
+    ),
+    ratioCell(present?.ratio),
+  ];
+}
+
 const modemKindLabels: Record<ModemKind, string> = {
   [ModemKind.BuiltIn]: 'встроенный',
   [ModemKind.External]: 'внешний',
@@ -135,6 +167,7 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       },
       tt: {
         select: {
+          state: true,
           typeA: true,
           typeB: true,
           typeC: true,
@@ -146,6 +179,7 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       },
       tn: {
         select: {
+          state: true,
           typeA: true,
           typeB: true,
           typeC: true,
@@ -195,13 +229,6 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
     const next = ti.meters.find(
       (meter) => meter.state === EquipmentState.proposed,
     );
-    /// ТТ и ТН у Ti теперь списки, но @unique на Tt.tiId и Tn.tiId держит не
-    /// больше одной строки на ТИ — берём её, и таблица показывает ровно то же,
-    /// что и раньше. Когда @unique снимут ради истории (dateInstalled /
-    /// dateRemoved), здесь понадобится правило выбора: скорее всего, строка,
-    /// у которой dateRemoved пуст, — то, что стоит на ТИ сейчас.
-    const tt = ti.tt[0] ?? null;
-    const tn = ti.tn[0] ?? null;
     const uspdSpan = uspdSpans[index];
     const modemSpan = modemSpans[index];
     const uspd = ti.group?.uspd;
@@ -221,15 +248,8 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       text(next?.number),
       yesNo(next?.isCompliant),
 
-      phaseLabels(tt !== null),
-      phaseCell(tt ? [tt.typeA, tt.typeB, tt.typeC] : null),
-      phaseCell(tt ? [tt.numberA, tt.numberB, tt.numberC] : null),
-      ratioCell(tt?.ratio),
-
-      phaseLabels(tn !== null),
-      phaseCell(tn ? [tn.typeA, tn.typeB, tn.typeC] : null),
-      phaseCell(tn ? [tn.numberA, tn.numberB, tn.numberC] : null),
-      ratioCell(tn?.ratio),
+      ...transformerCells(ti.tt),
+      ...transformerCells(ti.tn),
 
       cell(uspd?.type ?? '', uspdSpan),
       cell(uspd?.number ?? '', uspdSpan),
