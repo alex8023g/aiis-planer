@@ -11,7 +11,7 @@ import {
   Channel,
   EquipmentState,
   ModemKind,
-  TnState,
+  TransformerState,
 } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 import { getProject, requireProjectEditor } from '@/lib/projects';
@@ -22,7 +22,10 @@ import {
   BUILT_IN_MODEM,
   NO_PROPOSED_METER,
   invalidValueError,
-  isTnAbsentInput,
+  TRANSFORMER_FIELDS,
+  isTransformerAbsentInput,
+  transformerFieldOf,
+  type TransformerField,
   modemImeiText,
   parsePhaseValues,
   parseTiStatus,
@@ -199,9 +202,7 @@ export type SurveyField =
   | 'existingPolling'
   | 'freeRs485'
   | 'proposedMeterType'
-  | 'tnType'
-  | 'tnNumber'
-  | 'tnRatio';
+  | TransformerField;
 
 export type SurveyEdit = {
   tiId: string;
@@ -226,9 +227,7 @@ const FIELDS = new Set<string>([
   'existingPolling',
   'freeRs485',
   'proposedMeterType',
-  'tnType',
-  'tnNumber',
-  'tnRatio',
+  ...Object.keys(TRANSFORMER_FIELDS),
 ]);
 
 /// Больше разом не пишем: вставка целой простыни из буфера по ошибке иначе
@@ -381,61 +380,59 @@ export async function updateSurveyCells(
           create: { tiId, state, needsReplacement },
           update: { needsReplacement },
         });
-      } else if (field === 'tnType' && isTnAbsentInput(value)) {
-        /// «-…» в марке — ТН нет (в номере дефис — просто значение). Данные
-        /// ТН стираем все: «ТН нет» с данными не пропустит CHECK
-        /// Tn_absent_is_empty.
-        const data = {
-          state: TnState.absent,
-          typeA: null,
-          typeB: null,
-          typeC: null,
-          numberA: null,
-          numberB: null,
-          numberC: null,
-          ratio: null,
-          dateInstalled: null,
-          dateRemoved: null,
-        };
+      } else if (transformerFieldOf(field)) {
+        /// ТТ и ТН — марки и номера по фазам, коэффициент одним значением.
+        /// Строки Tt и Tn есть у каждой ТИ (upsert — на случай ТИ, заведённой
+        /// в обход addTis).
+        const { transformer, part } = transformerFieldOf(field)!;
+        let data: Prisma.TtUncheckedUpdateInput & Prisma.TnUncheckedUpdateInput;
 
-        await tx.tn.upsert({
-          where: { tiId },
-          create: { tiId, ...data },
-          update: data,
-        });
-      } else if (field === 'tnType' || field === 'tnNumber') {
-        /// Марки или заводские номера ТН по фазам. Строка Tn есть у каждой
-        /// ТИ (upsert — на случай ТИ, заведённой в обход addTis). Значение —
-        /// значит, ТН есть: state = present, иначе «нет ТН» с данными не
-        /// пропустит CHECK. Стёртые значения состояние не трогают: ТН есть,
-        /// значение не выяснили.
-        const [a, b, c] = parsePhaseValues(value)!;
-        const hasValue = a !== null || b !== null || c !== null;
-        const data = {
-          ...(field === 'tnType'
-            ? { typeA: a, typeB: b, typeC: c }
-            : { numberA: a, numberB: b, numberC: c }),
-          ...(hasValue && { state: TnState.present }),
-        };
+        if (part === 'type' && isTransformerAbsentInput(value)) {
+          /// «-…» в марке — трансформатора нет (в номере дефис — просто
+          /// значение). Данные стираем все: «нет» с данными не пропустит
+          /// CHECK Tt_absent_is_empty / Tn_absent_is_empty.
+          data = {
+            state: TransformerState.absent,
+            typeA: null,
+            typeB: null,
+            typeC: null,
+            numberA: null,
+            numberB: null,
+            numberC: null,
+            ratio: null,
+            dateInstalled: null,
+            dateRemoved: null,
+          };
+        } else {
+          /// Значение — значит, трансформатор есть: state = present, иначе
+          /// «нет» с данными не пропустит CHECK. Стёртые значения состояние
+          /// не трогают: он есть, значение не выяснили.
+          let hasValue: boolean;
 
-        await tx.tn.upsert({
-          where: { tiId },
-          create: { tiId, ...data },
-          update: data,
-        });
-      } else if (field === 'tnRatio') {
-        /// Ктн — один на ТН. Как и марки с номерами: значение — ТН есть,
-        /// стёртое значение состояние не трогает.
-        const data = {
-          ratio: nullable,
-          ...(nullable !== null && { state: TnState.present }),
-        };
+          if (part === 'ratio') {
+            data = { ratio: nullable };
+            hasValue = nullable !== null;
+          } else {
+            const [a, b, c] = parsePhaseValues(value)!;
 
-        await tx.tn.upsert({
-          where: { tiId },
-          create: { tiId, ...data },
-          update: data,
-        });
+            data =
+              part === 'type'
+                ? { typeA: a, typeB: b, typeC: c }
+                : { numberA: a, numberB: b, numberC: c };
+            hasValue = a !== null || b !== null || c !== null;
+          }
+
+          if (hasValue) data.state = TransformerState.present;
+        }
+
+        const create = { tiId, ...data } as Prisma.TtUncheckedCreateInput &
+          Prisma.TnUncheckedCreateInput;
+
+        if (transformer === 'tt') {
+          await tx.tt.upsert({ where: { tiId }, create, update: data });
+        } else {
+          await tx.tn.upsert({ where: { tiId }, create, update: data });
+        }
       } else if (field === 'existingPolling') {
         await tx.ti.update({
           where: { id: tiId },
@@ -588,7 +585,9 @@ export async function addTis(
           group: {
             create: { project: { connect: { id: projectId } } },
           },
-          /// Строка ТН есть у каждой ТИ: есть ли ТН, пока не выяснили.
+          /// Строки ТТ и ТН есть у каждой ТИ: есть ли они, пока не
+          /// выяснили.
+          tt: { create: {} },
           tn: { create: {} },
         },
       });

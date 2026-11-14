@@ -508,7 +508,9 @@ export async function addTis(
           group: {
             create: { project: { connect: { id: projectId } } },
           },
-          /// Строка ТН есть у каждой ТИ: есть ли ТН, пока не выяснили.
+          /// Строки ТТ и ТН есть у каждой ТИ: есть ли они, пока не
+          /// выяснили.
+          tt: { create: {} },
           tn: { create: {} },
         },
       });

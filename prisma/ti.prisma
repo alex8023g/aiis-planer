@@ -56,13 +56,15 @@ enum WiringScheme {
   indirect
 }
 
-/// Есть ли у ТИ трансформатор напряжения (Tn.state).
-enum TnState {
+/// Есть ли у ТИ трансформатор (Tt.state, Tn.state). Общий для ТТ и ТН.
+enum TransformerState {
   /// Не выяснили.
   unknown
-  /// ТН нет. Данных ТН тогда нет тоже — следит CHECK Tn_absent_is_empty.
+  /// Трансформатора нет. Данных тогда нет тоже — следят CHECK
+  /// Tt_absent_is_empty и Tn_absent_is_empty.
   absent
-  /// ТН есть: марки, номера, Ктн и даты — в Tn; пустое там — «не выяснили».
+  /// Трансформатор есть: марки, номера, коэффициент и даты — в Tt / Tn;
+  /// пустое там — «не выяснили».
   present
 }
 
@@ -104,12 +106,11 @@ model Ti {
   /// Не больше трёх: текущий, новый и последний снятый (см. @@unique в
   /// Meter и replaceMeter).
   meters          Meter[]
-  // ttId          String
-  // tt            Tt            @relation(fields: [ttId], references: [id], onDelete: Cascade)
-  tt              Tt[]
-  /// ТН у ТИ один, и строка Tn есть у каждой ТИ: в ней же состояние «есть
-  /// ли ТН» (Tn.state), даже когда ТН нет или это не выяснили. Заводят её
-  /// вместе с ТИ (tn: { create: {} }).
+  /// ТТ и ТН — по одной строке на ТИ, и строки Tt и Tn есть у каждой ТИ: в
+  /// них же состояние «есть ли трансформатор» (state), даже когда его нет
+  /// или это не выяснили. Заводят их вместе с ТИ
+  /// (tt: { create: {} }, tn: { create: {} }).
+  tt              Tt?
   tn              Tn?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -166,13 +167,17 @@ model Meter {
   @@unique([tiId, state])
 }
 
-/// Трансформаторы тока ТИ: по одному на фазу. Фазы B может не быть — при
-/// двух ТТ (фазы A и C) её поля пустые.
+/// Трансформаторы тока ТИ — по одной строке на ТИ, есть ТТ или нет. Марки
+/// и номера — по фазам A, B, C: по ТТ на фазу. Фазы B может не быть — при
+/// двух ТТ (фазы A и C) её поля пустые. Пустое поле — «не выяснили».
+///
+/// state = absent — данных нет вовсе: это держит CHECK Tt_absent_is_empty
+/// (в миграции ti_tt_state — Prisma CHECK не описывает).
 model Tt {
-  id            String    @id @default(cuid())
-  tiId          String
-  ti            Ti        @relation(fields: [tiId], references: [id], onDelete: Cascade)
-  // tis     Ti[]
+  id            String           @id @default(cuid())
+  tiId          String           @unique
+  ti            Ti               @relation(fields: [tiId], references: [id], onDelete: Cascade)
+  state         TransformerState @default(unknown)
   typeA         String?
   typeB         String?
   typeC         String?
@@ -181,8 +186,8 @@ model Tt {
   numberC       String?
   /// Коэффициент трансформации, например «150/5».
   ratio         String?
-  dateInstalled DateTime? @db.Date
-  dateRemoved   DateTime? @db.Date
+  dateInstalled DateTime?        @db.Date
+  dateRemoved   DateTime?        @db.Date
 }
 
 /// Трансформатор напряжения ТИ — по одной строке на ТИ, есть ТН или нет.
@@ -192,10 +197,10 @@ model Tt {
 /// (в миграции ti_tn_state — Prisma CHECK не описывает), так что «ТН нет»
 /// и марка ТН вместе в базу не попадут.
 model Tn {
-  id            String    @id @default(cuid())
-  tiId          String    @unique
-  ti            Ti        @relation(fields: [tiId], references: [id], onDelete: Cascade)
-  state         TnState   @default(unknown)
+  id            String           @id @default(cuid())
+  tiId          String           @unique
+  ti            Ti               @relation(fields: [tiId], references: [id], onDelete: Cascade)
+  state         TransformerState @default(unknown)
   typeA         String?
   typeB         String?
   typeC         String?
@@ -204,8 +209,8 @@ model Tn {
   numberC       String?
   /// Коэффициент трансформации, например «10000/100».
   ratio         String?
-  dateInstalled DateTime? @db.Date
-  dateRemoved   DateTime? @db.Date
+  dateInstalled DateTime?        @db.Date
+  dateRemoved   DateTime?        @db.Date
 }
 
 /// Текст опроса группы ТИ.

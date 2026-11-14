@@ -100,9 +100,9 @@ export const surveyTiColumns: SurveyColumn[] = [
 /// прочерк — то же, что пустая ячейка.
 export const NO_PROPOSED_METER = '----';
 
-/// Все ячейки ТН у ТИ, где ТН нет (Tn.state = absent): «нет» видно прямо, а
-/// не пустотой — пустая ячейка ТН значит «не выяснили».
-export const TN_ABSENT = '---';
+/// Все ячейки ТТ или ТН у ТИ, где его нет (state = absent): «нет» видно
+/// прямо, а не пустотой — пустая ячейка значит «не выяснили».
+export const TRANSFORMER_ABSENT = '---';
 
 /// «IMEI модема» у встроенного модема без IMEI: модем внутри счётчика, из
 /// свободных модемов проекта его не выбирают.
@@ -234,11 +234,34 @@ export function phaseValuesText(
   return values.map((value) => value ?? '—').join('\n');
 }
 
-/// Текст ячейки «ТН тип», который значит «ТН нет» (Tn.state = absent):
-/// начинается с дефиса — «-», «---» (TN_ABSENT, так ячейку и копируют).
-/// Только дефис: длинное тире «—» в тексте ячейки — пустая фаза. Только в
-/// марке: в «ТН №» дефис — просто значение (одиночный — пустая фаза).
-export function isTnAbsentInput(value: string): boolean {
+/// Правимые поля ТТ и ТН в таблице: какой трансформатор и что в нём —
+/// марки и номера по фазам (A, B, C), коэффициент одним значением.
+export const TRANSFORMER_FIELDS = {
+  ttType: { transformer: 'tt', part: 'type' },
+  ttNumber: { transformer: 'tt', part: 'number' },
+  ttRatio: { transformer: 'tt', part: 'ratio' },
+  tnType: { transformer: 'tn', part: 'type' },
+  tnNumber: { transformer: 'tn', part: 'number' },
+  tnRatio: { transformer: 'tn', part: 'ratio' },
+} as const;
+
+export type TransformerField = keyof typeof TRANSFORMER_FIELDS;
+
+/// Поле ТТ или ТН по имени поля; undefined — поле не трансформатора.
+export function transformerFieldOf(
+  field: string,
+): (typeof TRANSFORMER_FIELDS)[TransformerField] | undefined {
+  return Object.hasOwn(TRANSFORMER_FIELDS, field)
+    ? TRANSFORMER_FIELDS[field as TransformerField]
+    : undefined;
+}
+
+/// Текст ячейки «ТТ тип» или «ТН тип», который значит «трансформатора нет»
+/// (state = absent): начинается с дефиса — «-», «---» (TRANSFORMER_ABSENT,
+/// так ячейку и копируют). Только дефис: длинное тире «—» в тексте ячейки —
+/// пустая фаза. Только в марке: в номере дефис — просто значение
+/// (одиночный — пустая фаза).
+export function isTransformerAbsentInput(value: string): boolean {
   return value.trim().startsWith('-');
 }
 
@@ -283,14 +306,17 @@ export function invalidValueError(field: string, value: string): string | null {
       return parseYesNo(value) === undefined
         ? `${shown} — не «да» и не «нет»`
         : null;
-    case 'tnType':
-    case 'tnNumber':
-      return !(field === 'tnType' && isTnAbsentInput(value)) &&
-        parsePhaseValues(value) === undefined
+    default: {
+      /// Марки и номера ТТ и ТН — по фазам; «-…» в марке — «нет», не фазы.
+      const part = transformerFieldOf(field)?.part;
+
+      if (part !== 'type' && part !== 'number') return null;
+      if (part === 'type' && isTransformerAbsentInput(value)) return null;
+
+      return parsePhaseValues(value) === undefined
         ? `${shown} — фаз больше трёх (по строке на фазу: A, B, C)`
         : null;
-    default:
-      return null;
+    }
   }
 }
 

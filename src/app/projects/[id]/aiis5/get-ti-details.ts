@@ -1,4 +1,4 @@
-import { EquipmentState, TnState } from '@/generated/prisma/enums';
+import { EquipmentState, TransformerState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 
 import type { TiDetails } from './ti-details';
@@ -65,9 +65,9 @@ export async function getTiDetails(
       id: true,
       notes: true,
       meters: { select: meterSelect },
-      /// ТТ — список, но берём одну строку (см. getTiRows в src/lib/tis.ts).
-      tt: { select: transformerSelect, take: 1 },
-      /// ТН у ТИ один, и строка есть всегда — с состоянием «есть ли ТН».
+      /// ТТ и ТН у ТИ по одному, и строки есть всегда — с состоянием «есть
+      /// ли трансформатор».
+      tt: { select: { ...transformerSelect, state: true } },
       tn: { select: { ...transformerSelect, state: true } },
       group: {
         select: {
@@ -113,11 +113,14 @@ export async function getTiDetails(
         currentMeter: meter(EquipmentState.current),
         proposedMeter: meter(EquipmentState.proposed),
         removedMeter: meter(EquipmentState.removed),
-        tt: transformer(ti.tt[0]),
-        tnState: ti.tn?.state ?? TnState.unknown,
-        /// Данные ТН — только когда он есть: у «нет» и «не выяснили» колонки
-        /// ТН пустые, как у ТИ без трансформатора.
-        tn: ti.tn?.state === TnState.present ? transformer(ti.tn) : null,
+        /// Данные трансформатора — только когда он есть: у «нет» и «не
+        /// выяснили» его колонки пустые.
+        ttState: ti.tt?.state ?? TransformerState.unknown,
+        tt:
+          ti.tt?.state === TransformerState.present ? transformer(ti.tt) : null,
+        tnState: ti.tn?.state ?? TransformerState.unknown,
+        tn:
+          ti.tn?.state === TransformerState.present ? transformer(ti.tn) : null,
         group: group
           ? {
               id: group.id,

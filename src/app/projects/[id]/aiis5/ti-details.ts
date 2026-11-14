@@ -17,7 +17,7 @@ import type {
 import type {
   Channel as DbChannel,
   ModemKind as DbModemKind,
-  TnState as DbTnState,
+  TransformerState as DbTransformerState,
 } from '@/generated/prisma/enums';
 import {
   cell,
@@ -28,7 +28,7 @@ import {
 } from '@/lib/survey-cells';
 import {
   NO_PROPOSED_METER,
-  TN_ABSENT,
+  TRANSFORMER_ABSENT,
   modemImeiText,
   suggestedWiring,
   tiStatusLabels,
@@ -62,10 +62,12 @@ export type TiDetails = {
   currentMeter: Meter | null;
   proposedMeter: Meter | null;
   removedMeter: (Meter & { type: string | null }) | null;
+  /// Есть ли у ТИ ТТ и ТН: unknown — не выяснили, absent — нет, present —
+  /// есть.
+  ttState: DbTransformerState;
+  tnState: DbTransformerState;
+  /// Данные ТТ и ТН; null — трансформатор не present (см. ttState, tnState).
   tt: Transformer | null;
-  /// Есть ли у ТИ ТН: unknown — не выяснили, absent — нет, present — есть.
-  tnState: DbTnState;
-  /// Данные ТН; null — ТН не present (см. tnState).
   tn: Transformer | null;
   group: {
     id: string;
@@ -197,14 +199,17 @@ function transformerColumns(
     },
   ];
 
-  if (group === 'tt') return columns;
+  const state = group === 'tt' ? 'ttState' : 'tnState';
 
-  /// ТН нет (state = absent) — во всех колонках ТН TN_ABSENT: «нет» видно
-  /// прямо, а пустая ячейка остаётся «не выяснили».
+  /// Трансформатора нет (state = absent) — во всех его колонках
+  /// TRANSFORMER_ABSENT: «нет» видно прямо, а пустая ячейка остаётся «не
+  /// выяснили».
   return columns.map((column) => ({
     ...column,
     cell: (row) =>
-      row.details?.tnState === 'absent' ? { v: TN_ABSENT } : column.cell(row),
+      row.details?.[state] === 'absent'
+        ? { v: TRANSFORMER_ABSENT }
+        : column.cell(row),
   }));
 }
 
