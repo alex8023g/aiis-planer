@@ -200,7 +200,8 @@ export type SurveyField =
   | 'freeRs485'
   | 'proposedMeterType'
   | 'tnType'
-  | 'tnNumber';
+  | 'tnNumber'
+  | 'tnRatio';
 
 export type SurveyEdit = {
   tiId: string;
@@ -227,6 +228,7 @@ const FIELDS = new Set<string>([
   'proposedMeterType',
   'tnType',
   'tnNumber',
+  'tnRatio',
 ]);
 
 /// Больше разом не пишем: вставка целой простыни из буфера по ошибке иначе
@@ -414,6 +416,19 @@ export async function updateSurveyCells(
             ? { typeA: a, typeB: b, typeC: c }
             : { numberA: a, numberB: b, numberC: c }),
           ...(hasValue && { state: TnState.present }),
+        };
+
+        await tx.tn.upsert({
+          where: { tiId },
+          create: { tiId, ...data },
+          update: data,
+        });
+      } else if (field === 'tnRatio') {
+        /// Ктн — один на ТН. Как и марки с номерами: значение — ТН есть,
+        /// стёртое значение состояние не трогает.
+        const data = {
+          ratio: nullable,
+          ...(nullable !== null && { state: TnState.present }),
         };
 
         await tx.tn.upsert({

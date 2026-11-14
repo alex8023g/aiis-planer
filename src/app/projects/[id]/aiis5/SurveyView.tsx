@@ -135,6 +135,8 @@ const EDITABLE_FIELDS: Record<string, SurveyField> = {
   /// видна до ответа сервера через applyDetailEdits. Правят по фазе.
   tnType: 'tnType',
   tnNumber: 'tnNumber',
+  /// Ктн — одно значение на ТН, правится целиком, как обычная ячейка.
+  tnRatio: 'tnRatio',
 };
 /// То же по индексу колонки в tableColumns.
 const EDITABLE_COLUMNS: Partial<Record<number, SurveyField>> =
@@ -175,6 +177,8 @@ function fieldValue(
       return phaseValuesText(details?.tn?.type);
     case 'tnNumber':
       return phaseValuesText(details?.tn?.number);
+    case 'tnRatio':
+      return details?.tn?.ratio ?? '';
     case 'number':
       return ti.number;
     case 'name':
@@ -209,8 +213,8 @@ function fieldValue(
 }
 
 /// Правки поверх TiDetails — то же, что applyEdits, для полей, которых нет в
-/// SurveyTi. Сейчас это марки и номера ТН: ТН ещё нет — заводим пустой, как
-/// экшен.
+/// SurveyTi. Сейчас это данные ТН — марки, номера и Ктн: ТН ещё нет —
+/// заводим пустой, как экшен.
 function applyDetailEdits(
   details: Record<string, TiDetails>,
   edits: SurveyEdit[],
@@ -220,17 +224,18 @@ function applyDetailEdits(
   for (const { tiId, field, value } of edits) {
     const current = next[tiId];
 
-    if ((field !== 'tnType' && field !== 'tnNumber') || !current) continue;
+    if (
+      (field !== 'tnType' && field !== 'tnNumber' && field !== 'tnRatio') ||
+      !current
+    ) {
+      continue;
+    }
 
     /// «-…» в марке — ТН нет, данных ТН нет тоже (как в экшене).
     if (field === 'tnType' && isTnAbsentInput(value)) {
       next = { ...next, [tiId]: { ...current, tnState: 'absent', tn: null } };
       continue;
     }
-
-    const values = parsePhaseValues(value);
-
-    if (!values) continue;
 
     const tn = current.tn ?? {
       type: [null, null, null],
@@ -240,18 +245,32 @@ function applyDetailEdits(
       dateRemoved: null,
     };
 
+    /// Ктн — одним значением, марки и номера — по фазам.
+    let patch: Partial<NonNullable<TiDetails['tn']>>;
+    let hasValue: boolean;
+
+    if (field === 'tnRatio') {
+      const ratio = value.trim() === '' ? null : value.trim();
+
+      patch = { ratio };
+      hasValue = ratio !== null;
+    } else {
+      const values = parsePhaseValues(value);
+
+      if (!values) continue;
+
+      patch = field === 'tnType' ? { type: values } : { number: values };
+      hasValue = values.some((item) => item !== null);
+    }
+
     /// Значение — значит, ТН есть, как и в экшене; стёртое значение
     /// состояние не меняет.
-    const tnState = values.some((item) => item !== null)
-      ? 'present'
-      : current.tnState;
-
     next = {
       ...next,
       [tiId]: {
         ...current,
-        tnState,
-        tn: { ...tn, [field === 'tnType' ? 'type' : 'number']: values },
+        tnState: hasValue ? 'present' : current.tnState,
+        tn: { ...tn, ...patch },
       },
     };
   }
