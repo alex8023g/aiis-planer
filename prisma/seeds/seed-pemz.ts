@@ -282,7 +282,11 @@ async function main() {
                   }
                 : undefined,
             tt: tt === null ? undefined : { create: { ratio: tt } },
-            tn: tn === null ? undefined : { create: { ratio: tn } },
+            /// Строка ТН — у каждой ТИ. Ктн в опросе — ТН есть; нет Ктн — не
+            /// выяснили.
+            tn: {
+              create: tn === null ? {} : { state: 'present', ratio: tn },
+            },
           },
         });
 

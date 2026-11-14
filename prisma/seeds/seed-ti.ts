@@ -250,7 +250,11 @@ export async function seedTis(
             }
           : undefined,
         tt: ttRatio === null ? undefined : { create: { ratio: ttRatio } },
-        tn: tnRatio === null ? undefined : { create: { ratio: tnRatio } },
+        /// Строка ТН — у каждой ТИ. Ктн в опросе — ТН есть; нет Ктн — не
+        /// выяснили.
+        tn: {
+          create: tnRatio === null ? {} : { state: 'present', ratio: tnRatio },
+        },
       },
     });
 

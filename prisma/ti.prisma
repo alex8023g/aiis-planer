@@ -56,6 +56,16 @@ enum WiringScheme {
   indirect
 }
 
+/// Есть ли у ТИ трансформатор напряжения (Tn.state).
+enum TnState {
+  /// Не выяснили.
+  unknown
+  /// ТН нет. Данных ТН тогда нет тоже — следит CHECK Tn_absent_is_empty.
+  absent
+  /// ТН есть: марки, номера, Ктн и даты — в Tn; пустое там — «не выяснили».
+  present
+}
+
 /// Точка измерения (ТИ) из опроса. Что на ней стоит — в дочерних таблицах:
 /// у каждой ТИ свой набор оборудования, общего между ТИ нет.
 model Ti {
@@ -97,7 +107,10 @@ model Ti {
   // ttId          String
   // tt            Tt            @relation(fields: [ttId], references: [id], onDelete: Cascade)
   tt              Tt[]
-  tn              Tn[]
+  /// ТН у ТИ один, и строка Tn есть у каждой ТИ: в ней же состояние «есть
+  /// ли ТН» (Tn.state), даже когда ТН нет или это не выяснили. Заводят её
+  /// вместе с ТИ (tn: { create: {} }).
+  tn              Tn?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -172,12 +185,17 @@ model Tt {
   dateRemoved   DateTime? @db.Date
 }
 
-/// Трансформатор напряжения ТИ. Трёхфазный ТН — одна марка в typeA, typeB и
-/// typeC пустые; три однофазных — по марке на фазу.
+/// Трансформатор напряжения ТИ — по одной строке на ТИ, есть ТН или нет.
+/// Марки и номера — по фазам A, B, C. Пустое поле — «не выяснили».
+///
+/// state = absent — данных нет вовсе: это держит CHECK Tn_absent_is_empty
+/// (в миграции ti_tn_state — Prisma CHECK не описывает), так что «ТН нет»
+/// и марка ТН вместе в базу не попадут.
 model Tn {
   id            String    @id @default(cuid())
-  tiId          String
+  tiId          String    @unique
   ti            Ti        @relation(fields: [tiId], references: [id], onDelete: Cascade)
+  state         TnState   @default(unknown)
   typeA         String?
   typeB         String?
   typeC         String?

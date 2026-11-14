@@ -2,7 +2,7 @@ import type {
   SurveyCell,
   SurveyColumn,
 } from '@/app/projects/[id]/aiis2/survey-data';
-import { EquipmentState } from '@/generated/prisma/enums';
+import { EquipmentState, TnState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 import { getMeterDictionaryChecker } from '@/lib/siDictionaryMatch';
 import {
@@ -13,7 +13,7 @@ import {
   voltageClassLabels,
   yesNo,
 } from '@/lib/survey-cells';
-import type { SurveyTi } from '@/lib/survey-ti';
+import { TN_ABSENT, type SurveyTi } from '@/lib/survey-ti';
 import { Channel, ModemKind } from '@/lib/types';
 
 /// Все поля ТИ, какие есть в схеме, — по колонке на поле. Пустых колонок тут
@@ -146,6 +146,7 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       },
       tn: {
         select: {
+          state: true,
           typeA: true,
           typeB: true,
           typeC: true,
@@ -195,13 +196,14 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
     const next = ti.meters.find(
       (meter) => meter.state === EquipmentState.proposed,
     );
-    /// ТТ и ТН у Ti теперь списки, но @unique на Tt.tiId и Tn.tiId держит не
-    /// больше одной строки на ТИ — берём её, и таблица показывает ровно то же,
-    /// что и раньше. Когда @unique снимут ради истории (dateInstalled /
-    /// dateRemoved), здесь понадобится правило выбора: скорее всего, строка,
-    /// у которой dateRemoved пуст, — то, что стоит на ТИ сейчас.
+    /// ТТ у Ti — список; берём первую строку, и таблица показывает ровно то
+    /// же, что и раньше. Когда строк станет несколько ради истории
+    /// (dateInstalled / dateRemoved), здесь понадобится правило выбора:
+    /// скорее всего, строка, у которой dateRemoved пуст.
     const tt = ti.tt[0] ?? null;
-    const tn = ti.tn[0] ?? null;
+    /// ТН у ТИ один, и строка Tn есть всегда; данные — только у ТН, который
+    /// есть (state = present). «Нет» и «не выяснили» — пустые колонки.
+    const tn = ti.tn?.state === TnState.present ? ti.tn : null;
     const uspdSpan = uspdSpans[index];
     const modemSpan = modemSpans[index];
     const uspd = ti.group?.uspd;
@@ -226,10 +228,15 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       phaseCell(tt ? [tt.numberA, tt.numberB, tt.numberC] : null),
       ratioCell(tt?.ratio),
 
-      phaseLabels(tn !== null),
-      phaseCell(tn ? [tn.typeA, tn.typeB, tn.typeC] : null),
-      phaseCell(tn ? [tn.numberA, tn.numberB, tn.numberC] : null),
-      ratioCell(tn?.ratio),
+      /// ТН нет — TN_ABSENT во всех его колонках (см. TN_ABSENT).
+      ...(ti.tn?.state === TnState.absent
+        ? [text(TN_ABSENT), text(TN_ABSENT), text(TN_ABSENT), text(TN_ABSENT)]
+        : [
+            phaseLabels(tn !== null),
+            phaseCell(tn ? [tn.typeA, tn.typeB, tn.typeC] : null),
+            phaseCell(tn ? [tn.numberA, tn.numberB, tn.numberC] : null),
+            ratioCell(tn?.ratio),
+          ]),
 
       cell(uspd?.type ?? '', uspdSpan),
       cell(uspd?.number ?? '', uspdSpan),

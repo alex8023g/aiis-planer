@@ -100,6 +100,10 @@ export const surveyTiColumns: SurveyColumn[] = [
 /// прочерк — то же, что пустая ячейка.
 export const NO_PROPOSED_METER = '----';
 
+/// Все ячейки ТН у ТИ, где ТН нет (Tn.state = absent): «нет» видно прямо, а
+/// не пустотой — пустая ячейка ТН значит «не выяснили».
+export const TN_ABSENT = '---';
+
 /// «IMEI модема» у встроенного модема без IMEI: модем внутри счётчика, из
 /// свободных модемов проекта его не выбирают.
 export const BUILT_IN_MODEM = 'встроенный';
@@ -227,6 +231,13 @@ export function phaseTypesText(types: PhaseTypes | null | undefined): string {
   return types.map((type) => type ?? '—').join('\n');
 }
 
+/// Текст ячейки «ТН тип», который значит «ТН нет» (Tn.state = absent):
+/// начинается с дефиса — «-», «---» (TN_ABSENT, так ячейку и копируют).
+/// Только дефис: длинное тире «—» в тексте ячейки — пустая фаза.
+export function isTnAbsentInput(value: string): boolean {
+  return value.trim().startsWith('-');
+}
+
 /// Марки ТН из текста ячейки: строка на фазу (A, B, C); «;» тоже разделяет —
 /// так удобнее вставлять одной строкой. Прочерк — пустая фаза, недостающие
 /// фазы — тоже пустые. undefined — фаз больше трёх.
@@ -269,7 +280,7 @@ export function invalidValueError(field: string, value: string): string | null {
         ? `${shown} — не «да» и не «нет»`
         : null;
     case 'tnType':
-      return parsePhaseTypes(value) === undefined
+      return !isTnAbsentInput(value) && parsePhaseTypes(value) === undefined
         ? `${shown} — фаз больше трёх (по строке на фазу: A, B, C)`
         : null;
     default:

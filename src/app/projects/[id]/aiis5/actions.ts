@@ -7,7 +7,12 @@ import { promisify } from 'node:util';
 import { refresh } from 'next/cache';
 
 import type { Prisma } from '@/generated/prisma/client';
-import { Channel, EquipmentState, ModemKind } from '@/generated/prisma/enums';
+import {
+  Channel,
+  EquipmentState,
+  ModemKind,
+  TnState,
+} from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 import { getProject, requireProjectEditor } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
@@ -17,6 +22,7 @@ import {
   BUILT_IN_MODEM,
   NO_PROPOSED_METER,
   invalidValueError,
+  isTnAbsentInput,
   modemImeiText,
   parsePhaseTypes,
   parseTiStatus,
@@ -371,21 +377,46 @@ export async function updateSurveyCells(
           create: { tiId, state, needsReplacement },
           update: { needsReplacement },
         });
-      } else if (field === 'tnType') {
-        /// Марки ТН по фазам. ТН у ТИ один (см. getTiDetails) — правим его,
-        /// а нет — заводим, но только ради непустой марки.
-        const [typeA, typeB, typeC] = parsePhaseTypes(value)!;
-        const data = { typeA, typeB, typeC };
-        const tn = await tx.tn.findFirst({
-          where: { tiId },
-          select: { id: true },
-        });
+      } else if (field === 'tnType' && isTnAbsentInput(value)) {
+        /// «-…» — ТН нет. Данные ТН стираем все, не только марки: «ТН нет»
+        /// с данными не пропустит CHECK Tn_absent_is_empty.
+        const data = {
+          state: TnState.absent,
+          typeA: null,
+          typeB: null,
+          typeC: null,
+          numberA: null,
+          numberB: null,
+          numberC: null,
+          ratio: null,
+          dateInstalled: null,
+          dateRemoved: null,
+        };
 
-        if (tn) {
-          await tx.tn.update({ where: { id: tn.id }, data });
-        } else if (typeA !== null || typeB !== null || typeC !== null) {
-          await tx.tn.create({ data: { tiId, ...data } });
-        }
+        await tx.tn.upsert({
+          where: { tiId },
+          create: { tiId, ...data },
+          update: data,
+        });
+      } else if (field === 'tnType') {
+        /// Марки ТН по фазам. Строка Tn есть у каждой ТИ (upsert — на
+        /// случай ТИ, заведённой в обход addTis). Марка — значит, ТН есть:
+        /// state = present, иначе «нет ТН» с маркой не пропустит CHECK.
+        /// Стёртые марки состояние не трогают: ТН есть, марку не выяснили.
+        const [typeA, typeB, typeC] = parsePhaseTypes(value)!;
+        const hasType = typeA !== null || typeB !== null || typeC !== null;
+        const data = {
+          typeA,
+          typeB,
+          typeC,
+          ...(hasType && { state: TnState.present }),
+        };
+
+        await tx.tn.upsert({
+          where: { tiId },
+          create: { tiId, ...data },
+          update: data,
+        });
       } else if (field === 'existingPolling') {
         await tx.ti.update({
           where: { id: tiId },
@@ -538,6 +569,8 @@ export async function addTis(
           group: {
             create: { project: { connect: { id: projectId } } },
           },
+          /// Строка ТН есть у каждой ТИ: есть ли ТН, пока не выяснили.
+          tn: { create: {} },
         },
       });
     }

@@ -39,7 +39,9 @@ import { emptyRow, voltageClassLabels, yesNo } from '@/lib/survey-cells';
 import {
   BUILT_IN_MODEM,
   NO_PROPOSED_METER,
+  TN_ABSENT,
   invalidValueError,
+  isTnAbsentInput,
   modemImeiText,
   parsePhaseTypes,
   parseTiStatus,
@@ -87,6 +89,10 @@ const PROPOSED_METER_COLUMN = columnIndex('proposedMeterType');
 /// Пофазные колонки: ячейка — по элементу на фазу (A, B, C), выделяют и
 /// правят фазу, а не ячейку (renderPhases).
 const PHASE_COLUMNS = new Set([columnIndex('tnType')]);
+/// Все колонки ТН (раздел «ТН» в меню «Колонки»).
+const TN_COLUMNS = new Set(
+  columns.flatMap((column, index) => (column.group === 'tn' ? [index] : [])),
+);
 const PHASE_LABELS = ['A', 'B', 'C'] as const;
 /// Колонки, что не уезжают при прокрутке вбок: пустая, № и наименование ТИ.
 /// SurveyTable делает липкими первые показанные колонки — эти должны стоять
@@ -211,6 +217,12 @@ function applyDetailEdits(
 
     if (field !== 'tnType' || !current) continue;
 
+    /// «-…» — ТН нет, данных ТН нет тоже (как в экшене).
+    if (isTnAbsentInput(value)) {
+      next = { ...next, [tiId]: { ...current, tnState: 'absent', tn: null } };
+      continue;
+    }
+
     const type = parsePhaseTypes(value);
 
     if (!type) continue;
@@ -223,7 +235,16 @@ function applyDetailEdits(
       dateRemoved: null,
     };
 
-    next = { ...next, [tiId]: { ...current, tn: { ...tn, type } } };
+    /// Марка — значит, ТН есть, как и в экшене; стёртая марка состояние не
+    /// меняет.
+    const tnState = type.some((item) => item !== null)
+      ? 'present'
+      : current.tnState;
+
+    next = {
+      ...next,
+      [tiId]: { ...current, tnState, tn: { ...tn, type } },
+    };
   }
 
   return next;
@@ -658,12 +679,22 @@ export function SurveyView({
       : phases.map((item) => item || '—').join('\n');
   }
 
+  /// ТН у ТИ этой строки нет (state = absent): ячейки ТН — TN_ABSENT
+  /// одной строкой, без фаз.
+  function tnAbsentAt(row: number): boolean {
+    const ti = optimisticTis[row];
+
+    return !!ti && optimisticDetails[ti.id]?.tnState === 'absent';
+  }
+
   /// Выделена ли ровно эта пофазная ячейка, одна: тогда выделение — по фазе.
+  /// У ТИ без ТН фаз нет — выделяется ячейка.
   function phaseFocusedAt(row: number, col: number): boolean {
     const range = selection.range;
 
     return (
       PHASE_COLUMNS.has(col) &&
+      !tnAbsentAt(row) &&
       range !== null &&
       range.col === col &&
       range.cells === 1 &&
@@ -687,11 +718,9 @@ export function SurveyView({
   }
 
   /// Фазы пофазной ячейки — по элементу на фазу. Выделенная фаза
-  /// подсвечена; editor — поле правки на её месте. В ячейке без значений
-  /// фазы пустые, а не прочерки: прочерк говорил бы, что ТН есть.
+  /// подсвечена; editor — поле правки на её месте.
   function renderPhases(row: number, col: number, editor?: ReactNode) {
     const values = phaseValues(row, col);
-    const empty = values.every((value) => value === '');
     const focused = editable && phaseFocusedAt(row, col);
 
     return (
@@ -709,7 +738,9 @@ export function SurveyView({
           >
             {editor && index === phase
               ? editor
-              : values[index] || (empty ? ' ' : '—')}
+              : /// Пустая фаза — пустая строка, без прочерка: высоту ей держит
+                /// неразрывный пробел, и фазы стоят напротив подписей «фаза».
+                values[index] || '\u00a0'}
           </div>
         ))}
       </div>
@@ -1055,6 +1086,19 @@ export function SurveyView({
   /// что дал режим. Копируется строка без неё — точка лежит только в
   /// разметке. Поле правки точку не получает.
   function cellProps(row: number, col: number): SurveyCellProps | undefined {
+    const props = baseCellProps(row, col);
+
+    /// Ячейки ТН — с отступами сверху и снизу меньше обычных: в них по три
+    /// строки на фазы, и строка таблицы иначе выходит слишком высокой.
+    if (!TN_COLUMNS.has(col)) return props;
+
+    return { ...props, className: cn(props?.className, 'py-0.5') };
+  }
+
+  function baseCellProps(
+    row: number,
+    col: number,
+  ): SurveyCellProps | undefined {
     const props = modeCellProps(row, col);
     const ti = optimisticTis[row];
 
@@ -1075,14 +1119,11 @@ export function SurveyView({
 
     /// Пофазная ячейка — по элементу на фазу A, B, C, а не одним текстом с
     /// переводами строк. Текст ячейки (по строке на фазу) остаётся её
-    /// значением: его копируют и вставляют. В просмотре ячейка без ТН пустая;
-    /// в правке фазы есть всегда — их выделяют, чтобы заполнить.
-    if (
-      PHASE_COLUMNS.has(col) &&
-      ti &&
-      !props?.children &&
-      (editable || rows[row]?.[col]?.v)
-    ) {
+    /// значением: его копируют и вставляют. Три элемента есть всегда, и у
+    /// ТИ без ТН — пустые: строка таблицы одной высоты, есть ТН или нет, а
+    /// в правке пустую фазу выделяют, чтобы заполнить.
+    /// ТН нет — в ячейке TN_ABSENT, как в остальных колонках ТН.
+    if (PHASE_COLUMNS.has(col) && ti && !props?.children && !tnAbsentAt(row)) {
       return { ...props, children: renderPhases(row, col) };
     }
 
@@ -1270,7 +1311,10 @@ export function SurveyView({
               finishEditing(
                 value === null
                   ? null
-                  : withPhase(row, col, editing.phase!, value),
+                  : /// «-…» в любой фазе — ТН нет: вся ячейка, а не фаза.
+                    isTnAbsentInput(value)
+                    ? TN_ABSENT
+                    : withPhase(row, col, editing.phase!, value),
                 refocus,
               )
             }

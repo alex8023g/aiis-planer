@@ -17,6 +17,7 @@ import type {
 import type {
   Channel as DbChannel,
   ModemKind as DbModemKind,
+  TnState as DbTnState,
 } from '@/generated/prisma/enums';
 import {
   cell,
@@ -27,6 +28,7 @@ import {
 } from '@/lib/survey-cells';
 import {
   NO_PROPOSED_METER,
+  TN_ABSENT,
   modemImeiText,
   suggestedWiring,
   tiStatusLabels,
@@ -61,6 +63,9 @@ export type TiDetails = {
   proposedMeter: Meter | null;
   removedMeter: (Meter & { type: string | null }) | null;
   tt: Transformer | null;
+  /// Есть ли у ТИ ТН: unknown — не выяснили, absent — нет, present — есть.
+  tnState: DbTnState;
+  /// Данные ТН; null — ТН не present (см. tnState).
   tn: Transformer | null;
   group: {
     id: string;
@@ -125,14 +130,17 @@ function date(value: string | null | undefined): SurveyCell {
   };
 }
 
-/// Пофазное значение — в три строки, прочерк у пустой фазы; пусто, если
-/// трансформатора на ТИ нет. Так же, как в таблице aiis3 (src/lib/tis.ts).
+/// Пофазное значение — в три строки; пусто, если трансформатора на ТИ нет.
+/// empty — что у пустой фазы: прочерк (так же, как в таблице aiis3,
+/// src/lib/tis.ts) или пустая строка — её высоту держит неразрывный пробел,
+/// иначе фазы съехали бы с подписей «фаза».
 function phaseCell(
   values: [string | null, string | null, string | null] | undefined,
+  empty = '—',
 ): SurveyCell {
   if (!values) return { v: '' };
 
-  return { v: PHASES.map((_, index) => values[index] ?? '—').join('\n') };
+  return { v: PHASES.map((_, index) => values[index] ?? empty).join('\n') };
 }
 
 /// Колонки ТТ или ТН — одинаковые, различаются только данными.
@@ -144,7 +152,7 @@ function transformerColumns(
 ): TableColumn[] {
   const of = (row: TiRow) => row.details?.[group] ?? null;
 
-  return [
+  const columns: TableColumn[] = [
     {
       title: 'фаза',
       minWidth: 50,
@@ -165,7 +173,10 @@ function transformerColumns(
       minWidth: widths.number,
       id: `${group}Number`,
       group,
-      cell: (row) => phaseCell(of(row)?.number),
+      /// У ТН пустой номер фазы — пустая строка, без прочерка, как и марка
+      /// в «ТН тип».
+      cell: (row) =>
+        phaseCell(of(row)?.number, group === 'tn' ? '\u00a0' : '—'),
     },
     {
       title: ratioTitle,
@@ -189,6 +200,16 @@ function transformerColumns(
       cell: (row) => date(of(row)?.dateRemoved),
     },
   ];
+
+  if (group === 'tt') return columns;
+
+  /// ТН нет (state = absent) — во всех колонках ТН TN_ABSENT: «нет» видно
+  /// прямо, а пустая ячейка остаётся «не выяснили».
+  return columns.map((column) => ({
+    ...column,
+    cell: (row) =>
+      row.details?.tnState === 'absent' ? { v: TN_ABSENT } : column.cell(row),
+  }));
 }
 
 /// Все колонки таблицы — в порядке на экране.
