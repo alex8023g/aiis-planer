@@ -24,7 +24,7 @@ import {
   invalidValueError,
   isTnAbsentInput,
   modemImeiText,
-  parsePhaseTypes,
+  parsePhaseValues,
   parseTiStatus,
   parseVoltageClass,
   parseWiringScheme,
@@ -199,7 +199,8 @@ export type SurveyField =
   | 'existingPolling'
   | 'freeRs485'
   | 'proposedMeterType'
-  | 'tnType';
+  | 'tnType'
+  | 'tnNumber';
 
 export type SurveyEdit = {
   tiId: string;
@@ -225,6 +226,7 @@ const FIELDS = new Set<string>([
   'freeRs485',
   'proposedMeterType',
   'tnType',
+  'tnNumber',
 ]);
 
 /// Больше разом не пишем: вставка целой простыни из буфера по ошибке иначе
@@ -378,8 +380,9 @@ export async function updateSurveyCells(
           update: { needsReplacement },
         });
       } else if (field === 'tnType' && isTnAbsentInput(value)) {
-        /// «-…» — ТН нет. Данные ТН стираем все, не только марки: «ТН нет»
-        /// с данными не пропустит CHECK Tn_absent_is_empty.
+        /// «-…» в марке — ТН нет (в номере дефис — просто значение). Данные
+        /// ТН стираем все: «ТН нет» с данными не пропустит CHECK
+        /// Tn_absent_is_empty.
         const data = {
           state: TnState.absent,
           typeA: null,
@@ -398,18 +401,19 @@ export async function updateSurveyCells(
           create: { tiId, ...data },
           update: data,
         });
-      } else if (field === 'tnType') {
-        /// Марки ТН по фазам. Строка Tn есть у каждой ТИ (upsert — на
-        /// случай ТИ, заведённой в обход addTis). Марка — значит, ТН есть:
-        /// state = present, иначе «нет ТН» с маркой не пропустит CHECK.
-        /// Стёртые марки состояние не трогают: ТН есть, марку не выяснили.
-        const [typeA, typeB, typeC] = parsePhaseTypes(value)!;
-        const hasType = typeA !== null || typeB !== null || typeC !== null;
+      } else if (field === 'tnType' || field === 'tnNumber') {
+        /// Марки или заводские номера ТН по фазам. Строка Tn есть у каждой
+        /// ТИ (upsert — на случай ТИ, заведённой в обход addTis). Значение —
+        /// значит, ТН есть: state = present, иначе «нет ТН» с данными не
+        /// пропустит CHECK. Стёртые значения состояние не трогают: ТН есть,
+        /// значение не выяснили.
+        const [a, b, c] = parsePhaseValues(value)!;
+        const hasValue = a !== null || b !== null || c !== null;
         const data = {
-          typeA,
-          typeB,
-          typeC,
-          ...(hasType && { state: TnState.present }),
+          ...(field === 'tnType'
+            ? { typeA: a, typeB: b, typeC: c }
+            : { numberA: a, numberB: b, numberC: c }),
+          ...(hasValue && { state: TnState.present }),
         };
 
         await tx.tn.upsert({

@@ -216,32 +216,36 @@ export function parseYesNo(value: string): boolean | null | undefined {
   return undefined;
 }
 
-/// Марки трансформатора по фазам A, B, C.
-export type PhaseTypes = [string | null, string | null, string | null];
+/// Значения трансформатора по фазам A, B, C: марки или заводские номера.
+export type PhaseValues = [string | null, string | null, string | null];
 
 /// Пустая фаза в тексте ячейки: так её показывает таблица (прочерк) или
 /// просто ничего.
 const EMPTY_PHASE = new Set(['', '—', '-', '–']);
 
-/// Марки ТН для правки ячейки — как в таблице: всегда три строки, A, B, C,
-/// пустая фаза — прочерком. Пусто — ТН нет или все фазы пустые.
-export function phaseTypesText(types: PhaseTypes | null | undefined): string {
-  if (!types || types.every((type) => type === null)) return '';
+/// Пофазные значения ТН (марки, номера) для правки ячейки — как в таблице:
+/// всегда три строки, A, B, C, пустая фаза — прочерком. Пусто — ТН нет или
+/// все фазы пустые.
+export function phaseValuesText(
+  values: PhaseValues | null | undefined,
+): string {
+  if (!values || values.every((value) => value === null)) return '';
 
-  return types.map((type) => type ?? '—').join('\n');
+  return values.map((value) => value ?? '—').join('\n');
 }
 
 /// Текст ячейки «ТН тип», который значит «ТН нет» (Tn.state = absent):
 /// начинается с дефиса — «-», «---» (TN_ABSENT, так ячейку и копируют).
-/// Только дефис: длинное тире «—» в тексте ячейки — пустая фаза.
+/// Только дефис: длинное тире «—» в тексте ячейки — пустая фаза. Только в
+/// марке: в «ТН №» дефис — просто значение (одиночный — пустая фаза).
 export function isTnAbsentInput(value: string): boolean {
   return value.trim().startsWith('-');
 }
 
-/// Марки ТН из текста ячейки: строка на фазу (A, B, C); «;» тоже разделяет —
-/// так удобнее вставлять одной строкой. Прочерк — пустая фаза, недостающие
-/// фазы — тоже пустые. undefined — фаз больше трёх.
-export function parsePhaseTypes(value: string): PhaseTypes | undefined {
+/// Пофазные значения ТН из текста ячейки: строка на фазу (A, B, C); «;» тоже
+/// разделяет — так удобнее вставлять одной строкой. Прочерк — пустая фаза,
+/// недостающие фазы — тоже пустые. undefined — фаз больше трёх.
+export function parsePhaseValues(value: string): PhaseValues | undefined {
   const parts = value
     .split(/[;\n]/)
     .map((part) => part.trim())
@@ -280,7 +284,9 @@ export function invalidValueError(field: string, value: string): string | null {
         ? `${shown} — не «да» и не «нет»`
         : null;
     case 'tnType':
-      return !isTnAbsentInput(value) && parsePhaseTypes(value) === undefined
+    case 'tnNumber':
+      return !(field === 'tnType' && isTnAbsentInput(value)) &&
+        parsePhaseValues(value) === undefined
         ? `${shown} — фаз больше трёх (по строке на фазу: A, B, C)`
         : null;
     default:

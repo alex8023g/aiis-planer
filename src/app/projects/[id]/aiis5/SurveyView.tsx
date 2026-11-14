@@ -43,12 +43,12 @@ import {
   invalidValueError,
   isTnAbsentInput,
   modemImeiText,
-  parsePhaseTypes,
+  parsePhaseValues,
   parseTiStatus,
   parseVoltageClass,
   parseWiringScheme,
   parseYesNo,
-  phaseTypesText,
+  phaseValuesText,
   suggestedWiring,
   tiStatusLabels,
   wiringLabels,
@@ -88,7 +88,8 @@ const WIRING_COLUMN = columnIndex('wiring');
 const PROPOSED_METER_COLUMN = columnIndex('proposedMeterType');
 /// Пофазные колонки: ячейка — по элементу на фазу (A, B, C), выделяют и
 /// правят фазу, а не ячейку (renderPhases).
-const PHASE_COLUMNS = new Set([columnIndex('tnType')]);
+const TN_TYPE_COLUMN = columnIndex('tnType');
+const PHASE_COLUMNS = new Set([TN_TYPE_COLUMN, columnIndex('tnNumber')]);
 /// Все колонки ТН (раздел «ТН» в меню «Колонки»).
 const TN_COLUMNS = new Set(
   columns.flatMap((column, index) => (column.group === 'tn' ? [index] : [])),
@@ -130,9 +131,10 @@ const EDITABLE_FIELDS: Record<string, SurveyField> = {
   modemImei: 'modemImei',
   ip: 'ip',
   meterAddress: 'connectAddress',
-  /// Марки ТН по фазам — в TiDetails, а не в SurveyTi: правка видна до
-  /// ответа сервера через applyDetailEdits. Правят три строки, A, B, C.
+  /// Марки и номера ТН по фазам — в TiDetails, а не в SurveyTi: правка
+  /// видна до ответа сервера через applyDetailEdits. Правят по фазе.
   tnType: 'tnType',
+  tnNumber: 'tnNumber',
 };
 /// То же по индексу колонки в tableColumns.
 const EDITABLE_COLUMNS: Partial<Record<number, SurveyField>> =
@@ -170,7 +172,9 @@ function fieldValue(
 
   switch (EDITABLE_COLUMNS[col]) {
     case 'tnType':
-      return phaseTypesText(details?.tn?.type);
+      return phaseValuesText(details?.tn?.type);
+    case 'tnNumber':
+      return phaseValuesText(details?.tn?.number);
     case 'number':
       return ti.number;
     case 'name':
@@ -205,7 +209,8 @@ function fieldValue(
 }
 
 /// Правки поверх TiDetails — то же, что applyEdits, для полей, которых нет в
-/// SurveyTi. Сейчас это марки ТН: ТН ещё нет — заводим пустой, как экшен.
+/// SurveyTi. Сейчас это марки и номера ТН: ТН ещё нет — заводим пустой, как
+/// экшен.
 function applyDetailEdits(
   details: Record<string, TiDetails>,
   edits: SurveyEdit[],
@@ -215,17 +220,17 @@ function applyDetailEdits(
   for (const { tiId, field, value } of edits) {
     const current = next[tiId];
 
-    if (field !== 'tnType' || !current) continue;
+    if ((field !== 'tnType' && field !== 'tnNumber') || !current) continue;
 
-    /// «-…» — ТН нет, данных ТН нет тоже (как в экшене).
-    if (isTnAbsentInput(value)) {
+    /// «-…» в марке — ТН нет, данных ТН нет тоже (как в экшене).
+    if (field === 'tnType' && isTnAbsentInput(value)) {
       next = { ...next, [tiId]: { ...current, tnState: 'absent', tn: null } };
       continue;
     }
 
-    const type = parsePhaseTypes(value);
+    const values = parsePhaseValues(value);
 
-    if (!type) continue;
+    if (!values) continue;
 
     const tn = current.tn ?? {
       type: [null, null, null],
@@ -235,15 +240,19 @@ function applyDetailEdits(
       dateRemoved: null,
     };
 
-    /// Марка — значит, ТН есть, как и в экшене; стёртая марка состояние не
-    /// меняет.
-    const tnState = type.some((item) => item !== null)
+    /// Значение — значит, ТН есть, как и в экшене; стёртое значение
+    /// состояние не меняет.
+    const tnState = values.some((item) => item !== null)
       ? 'present'
       : current.tnState;
 
     next = {
       ...next,
-      [tiId]: { ...current, tnState, tn: { ...tn, type } },
+      [tiId]: {
+        ...current,
+        tnState,
+        tn: { ...tn, [field === 'tnType' ? 'type' : 'number']: values },
+      },
     };
   }
 
@@ -687,14 +696,23 @@ export function SurveyView({
     return !!ti && optimisticDetails[ti.id]?.tnState === 'absent';
   }
 
+  /// Рисуется ли ячейка по фазам (renderPhases). У ТИ без ТН — нет: в
+  /// ячейке TN_ABSENT одной строкой. Кроме «ТН тип» в режиме правки: там
+  /// фазы есть и у ТИ без ТН — в фазу вписывают марку, и ТН появляется.
+  function phaseLayoutAt(row: number, col: number): boolean {
+    return (
+      PHASE_COLUMNS.has(col) &&
+      (!tnAbsentAt(row) || (editable && col === TN_TYPE_COLUMN))
+    );
+  }
+
   /// Выделена ли ровно эта пофазная ячейка, одна: тогда выделение — по фазе.
   /// У ТИ без ТН фаз нет — выделяется ячейка.
   function phaseFocusedAt(row: number, col: number): boolean {
     const range = selection.range;
 
     return (
-      PHASE_COLUMNS.has(col) &&
-      !tnAbsentAt(row) &&
+      phaseLayoutAt(row, col) &&
       range !== null &&
       range.col === col &&
       range.cells === 1 &&
@@ -720,7 +738,11 @@ export function SurveyView({
   /// Фазы пофазной ячейки — по элементу на фазу. Выделенная фаза
   /// подсвечена; editor — поле правки на её месте.
   function renderPhases(row: number, col: number, editor?: ReactNode) {
-    const values = phaseValues(row, col);
+    /// ТН нет — TN_ABSENT в средней фазе, крайние пустые: ячейка той же
+    /// высоты, что у ТИ с ТН, а «нет» стоит посередине.
+    const values = tnAbsentAt(row)
+      ? ['', TN_ABSENT, '']
+      : phaseValues(row, col);
     const focused = editable && phaseFocusedAt(row, col);
 
     return (
@@ -1122,8 +1144,9 @@ export function SurveyView({
     /// значением: его копируют и вставляют. Три элемента есть всегда, и у
     /// ТИ без ТН — пустые: строка таблицы одной высоты, есть ТН или нет, а
     /// в правке пустую фазу выделяют, чтобы заполнить.
-    /// ТН нет — в ячейке TN_ABSENT, как в остальных колонках ТН.
-    if (PHASE_COLUMNS.has(col) && ti && !props?.children && !tnAbsentAt(row)) {
+    /// ТН нет — в ячейке TN_ABSENT, как в остальных колонках ТН (кроме
+    /// «ТН тип» в правке — см. phaseLayoutAt).
+    if (ti && !props?.children && phaseLayoutAt(row, col)) {
       return { ...props, children: renderPhases(row, col) };
     }
 
@@ -1311,8 +1334,9 @@ export function SurveyView({
               finishEditing(
                 value === null
                   ? null
-                  : /// «-…» в любой фазе — ТН нет: вся ячейка, а не фаза.
-                    isTnAbsentInput(value)
+                  : /// «-…» в любой фазе марки — ТН нет: вся ячейка, а не
+                    /// фаза. В номере дефис — значение фазы.
+                    EDITABLE_COLUMNS[col] === 'tnType' && isTnAbsentInput(value)
                     ? TN_ABSENT
                     : withPhase(row, col, editing.phase!, value),
                 refocus,

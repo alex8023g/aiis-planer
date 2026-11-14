@@ -130,17 +130,16 @@ function date(value: string | null | undefined): SurveyCell {
   };
 }
 
-/// Пофазное значение — в три строки; пусто, если трансформатора на ТИ нет.
-/// empty — что у пустой фазы: прочерк (так же, как в таблице aiis3,
-/// src/lib/tis.ts) или пустая строка — её высоту держит неразрывный пробел,
-/// иначе фазы съехали бы с подписей «фаза».
+/// Пофазное значение — в три строки, прочерк у пустой фазы; пусто, если
+/// трансформатора на ТИ нет. Так же, как в таблице aiis3 (src/lib/tis.ts).
+/// Пофазные ячейки ТН SurveyView рисует сам, по элементу на фазу и без
+/// прочерков; этот текст у них — значение ячейки для копирования.
 function phaseCell(
   values: [string | null, string | null, string | null] | undefined,
-  empty = '—',
 ): SurveyCell {
   if (!values) return { v: '' };
 
-  return { v: PHASES.map((_, index) => values[index] ?? empty).join('\n') };
+  return { v: PHASES.map((_, index) => values[index] ?? '—').join('\n') };
 }
 
 /// Колонки ТТ или ТН — одинаковые, различаются только данными.
@@ -173,10 +172,7 @@ function transformerColumns(
       minWidth: widths.number,
       id: `${group}Number`,
       group,
-      /// У ТН пустой номер фазы — пустая строка, без прочерка, как и марка
-      /// в «ТН тип».
-      cell: (row) =>
-        phaseCell(of(row)?.number, group === 'tn' ? '\u00a0' : '—'),
+      cell: (row) => phaseCell(of(row)?.number),
     },
     {
       title: ratioTitle,
