@@ -14,7 +14,7 @@ import {
   TransformerState,
 } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
-import { MAIN_SIM_SLOT } from '@/lib/sim-card';
+import { defaultSimChannel, MAIN_SIM_SLOT } from '@/lib/sim-card';
 import { getProject, requireProjectEditor } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import { getMeterDictionaryChecker } from '@/lib/siDictionaryMatch';
@@ -65,8 +65,9 @@ function isBlankModem(modem: {
   type: string | null;
   imei: string | null;
   port: string | null;
-  channel: Channel;
   simCards: {
+    slot: number;
+    channel: Channel;
     number: string | null;
     ip: string | null;
     provider: string | null;
@@ -77,9 +78,12 @@ function isBlankModem(modem: {
     modem.type === null &&
     modem.imei === null &&
     modem.port === null &&
-    modem.channel === Channel.gprs &&
     modem.simCards.every(
-      (sim) => sim.number === null && sim.ip === null && sim.provider === null,
+      (sim) =>
+        sim.channel === defaultSimChannel(sim.slot) &&
+        sim.number === null &&
+        sim.ip === null &&
+        sim.provider === null,
     )
   );
 }
@@ -108,8 +112,15 @@ async function attachModem(
       type: true,
       imei: true,
       port: true,
-      channel: true,
-      simCards: { select: { number: true, ip: true, provider: true } },
+      simCards: {
+        select: {
+          slot: true,
+          channel: true,
+          number: true,
+          ip: true,
+          provider: true,
+        },
+      },
     },
   });
 
@@ -516,8 +527,20 @@ export async function updateSurveyCells(
         /// группы).
         const modem = await tx.modem.findUnique({
           where: { groupId },
-          select: { id: true },
+          select: {
+            id: true,
+            simCards: {
+              where: { slot: MAIN_SIM_SLOT },
+              select: { channel: true },
+            },
+          },
         });
+
+        /// По CSD модем дозваниваются по номеру карты — IP у неё нет.
+        /// Стереть IP можно: так чистят оставшийся от GPRS.
+        if (nullable !== null && modem?.simCards[0]?.channel === Channel.csd) {
+          return `У модема ТИ «${ti.name || 'без названия'}» канал CSD — IP у него нет`;
+        }
 
         if (modem) {
           await tx.simCard.upsert({
@@ -675,8 +698,15 @@ export async function mergeTiGroups(
           type: true,
           imei: true,
           port: true,
-          channel: true,
-          simCards: { select: { number: true, ip: true, provider: true } },
+          simCards: {
+            select: {
+              slot: true,
+              channel: true,
+              number: true,
+              ip: true,
+              provider: true,
+            },
+          },
         },
       },
       technicalSolution: { select: { id: true } },

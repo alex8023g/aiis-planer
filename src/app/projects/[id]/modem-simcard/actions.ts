@@ -7,43 +7,56 @@ import { refresh } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { requireProjectEditor } from '@/lib/projects';
 import { MAIN_SIM_SLOT, RESERVE_SIM_SLOT } from '@/lib/sim-card';
-import type { ActionResult } from '@/lib/types';
+import { Channel, type ActionResult } from '@/lib/types';
 
 export type ModemFields = {
   type: string;
   imei: string;
   /// Пусто — порт по умолчанию.
   port: string;
+  channel: Channel;
   simNumber: string;
   ip: string;
   provider: string;
-  /// Запасная SIM-карта (слот 2). Все пустые — карты нет.
+  /// Запасная SIM-карта (слот 2). Номер, IP и оператор пустые — карты нет.
+  reserveChannel: Channel;
   reserveSimNumber: string;
   reserveIp: string;
   reserveProvider: string;
 };
 
 type SimData = {
+  channel: Channel;
   number: string | null;
   ip: string | null;
   provider: string | null;
 };
 
-/// SIM-карты из полей формы — или текст ошибки. Запасная — null, когда все
-/// её поля пустые: такую карту не заводят, а заведённую удаляют.
+/// SIM-карты из полей формы — или текст ошибки. Запасная — null, когда её
+/// номер, IP и оператор пустые: такую карту не заводят, а заведённую
+/// удаляют. Один канал карту не заводит — у запасной он и так CSD.
 function simCardsOf(
   fields: ModemFields,
 ): { main: SimData; reserve: SimData | null } | { error: string } {
   const main = {
+    channel: fields.channel,
     number: nullable(fields.simNumber),
-    ip: nullable(fields.ip),
+    ip: ipFor(fields.channel, fields.ip),
     provider: nullable(fields.provider),
   };
   const reserve = {
+    channel: fields.reserveChannel,
     number: nullable(fields.reserveSimNumber),
-    ip: nullable(fields.reserveIp),
+    ip: ipFor(fields.reserveChannel, fields.reserveIp),
     provider: nullable(fields.reserveProvider),
   };
+
+  /// Каналы пришли из браузера — проверяем, что они из списка.
+  for (const channel of [main.channel, reserve.channel]) {
+    if (!Object.values(Channel).includes(channel)) {
+      return { error: 'Неизвестный канал связи' };
+    }
+  }
 
   for (const ip of [main.ip, reserve.ip]) {
     if (ip !== null && !isIP(ip)) return { error: `«${ip}» — не IP-адрес` };
@@ -53,6 +66,12 @@ function simCardsOf(
     reserve.number !== null || reserve.ip !== null || reserve.provider !== null;
 
   return { main, reserve: hasReserve ? reserve : null };
+}
+
+/// IP карты. У CSD его нет — модем дозваниваются по номеру, — поэтому IP
+/// не хранится, даже если поле успели заполнить до выбора канала.
+function ipFor(channel: Channel, value: string): string | null {
+  return channel === Channel.Csd ? null : nullable(value);
 }
 
 /// Пустое поле — «не знаем», то есть null, а не ''.

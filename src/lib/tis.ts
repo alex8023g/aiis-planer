@@ -4,7 +4,11 @@ import type {
 } from '@/app/projects/[id]/aiis2/survey-data';
 import { EquipmentState, TransformerState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
-import { MAIN_SIM_SLOT, RESERVE_SIM_SLOT } from '@/lib/sim-card';
+import {
+  defaultSimChannel,
+  MAIN_SIM_SLOT,
+  RESERVE_SIM_SLOT,
+} from '@/lib/sim-card';
 import { getMeterDictionaryChecker } from '@/lib/siDictionaryMatch';
 import {
   cell,
@@ -199,10 +203,14 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
               type: true,
               imei: true,
               port: true,
-              channel: true,
               simCards: {
                 where: { slot: MAIN_SIM_SLOT },
-                select: { number: true, ip: true, provider: true },
+                select: {
+                  channel: true,
+                  number: true,
+                  ip: true,
+                  provider: true,
+                },
               },
             },
           },
@@ -268,7 +276,7 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
 
       text(current?.meterAddress),
       cell(modem?.port ?? '', modemSpan),
-      cell(modem ? channelLabels[modem.channel] : '', modemSpan),
+      cell(modem ? channelLabels[sim?.channel ?? Channel.Gprs] : '', modemSpan),
 
       cell(ti.group?.sidePolling?.description ?? '', pollingSpans[index]),
       cell(ti.group?.notes?.description ?? '', notesSpans[index]),
@@ -336,10 +344,16 @@ export type ProjectModem = {
   type: string | null;
   imei: string | null;
   port: string | null;
-  channel: string;
   simNumber: string | null;
   ip: string | null;
   provider: string | null;
+  /// Каналы карт словами — для таблицы; без карты — пусто.
+  channel: string;
+  reserveChannel: string;
+  /// Каналы карт значениями — для формы; без карты — канал слота по
+  /// умолчанию.
+  channelValue: Channel;
+  reserveChannelValue: Channel;
   /// Запасная SIM-карта (слот 2). Все null — её нет.
   reserveSimNumber: string | null;
   reserveIp: string | null;
@@ -363,9 +377,14 @@ export async function getProjectModems(
       type: true,
       imei: true,
       port: true,
-      channel: true,
       simCards: {
-        select: { slot: true, number: true, ip: true, provider: true },
+        select: {
+          slot: true,
+          channel: true,
+          number: true,
+          ip: true,
+          provider: true,
+        },
       },
       group: {
         select: {
@@ -395,7 +414,12 @@ export async function getProjectModems(
         type: modem.type,
         imei: modem.imei,
         port: modem.port,
-        channel: channelLabels[modem.channel],
+        channel: main ? channelLabels[main.channel] : '',
+        reserveChannel: reserve ? channelLabels[reserve.channel] : '',
+        channelValue: (main?.channel ??
+          defaultSimChannel(MAIN_SIM_SLOT)) as Channel,
+        reserveChannelValue: (reserve?.channel ??
+          defaultSimChannel(RESERVE_SIM_SLOT)) as Channel,
         simNumber: main?.number ?? null,
         ip: main?.ip ?? null,
         provider: main?.provider ?? null,

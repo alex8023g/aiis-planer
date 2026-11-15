@@ -1,4 +1,8 @@
-import { EquipmentState, TransformerState } from '@/generated/prisma/enums';
+import {
+  Channel,
+  EquipmentState,
+  TransformerState,
+} from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
 import { MAIN_SIM_SLOT } from '@/lib/sim-card';
 
@@ -79,10 +83,9 @@ export async function getTiDetails(
               kind: true,
               type: true,
               port: true,
-              channel: true,
               simCards: {
                 where: { slot: MAIN_SIM_SLOT },
-                select: { number: true, provider: true },
+                select: { channel: true, number: true, provider: true },
               },
             },
           },
@@ -134,8 +137,10 @@ export async function getTiDetails(
                     kind: modem.kind,
                     type: modem.type,
                     port: modem.port,
-                    channel: modem.channel,
-                    sim: modem.simCards[0],
+                    /// Канал — основной карты; без карты — GPRS, как в базе по
+                    /// умолчанию.
+                    channel: modem.simCards[0]?.channel ?? Channel.gprs,
+                    sim: modem.simCards[0] ?? null,
                   }
                 : null,
               sidePolling: group.sidePolling?.description ?? null,
