@@ -43,9 +43,13 @@ import {
   invalidValueError,
   TRANSFORMER_FIELDS,
   isTransformerAbsentInput,
+  isTtAbsentInput,
+  shownPhases,
+  TT_ABSENT_PHASES,
   transformerFieldOf,
   modemImeiText,
   parsePhaseValues,
+  type PhaseValues,
   parseTiStatus,
   parseVoltageClass,
   parseWiringScheme,
@@ -88,9 +92,18 @@ const STATUS_COLUMN = columnIndex('status');
 const ATS_DICTIONARY_COLUMN = columnIndex('atsDictionary');
 const WIRING_COLUMN = columnIndex('wiring');
 const PROPOSED_METER_COLUMN = columnIndex('proposedMeterType');
-/// Колонки «ТТ тип» и «ТН тип»: у ТИ без трансформатора в правке они всё
-/// равно по фазам (см. phaseLayoutAt).
-const TRANSFORMER_TYPE_COLUMNS = new Set(['ttType', 'tnType'].map(columnIndex));
+/// «ТН тип»: у ТИ без ТН в правке она всё равно по фазам (см.
+/// phaseLayoutAt), а «-…» в ней — ТН нет.
+const TN_TYPE_COLUMN = columnIndex('tnType');
+/// Фаза B в «ТТ тип»: ТТ часто ставят только на A и C, и «-» здесь — «на
+/// фазе B ТТ нет». В марку и номер фазы B пишется TRANSFORMER_ABSENT: так
+/// «нет» отличается от пустой фазы — «не выяснили». Состояния «ТТ нет» у ТИ
+/// нет вовсе.
+const TT_TYPE_COLUMN = columnIndex('ttType');
+/// «-» в фазе A «ТТ тип» — ТТ нет вовсе: TRANSFORMER_ABSENT во всех его
+/// полях (isTtAbsentInput).
+const PHASE_A = 0;
+const PHASE_B = 1;
 /// Пофазные колонки: ячейка — по элементу на фазу (A, B, C), выделяют и
 /// правят фазу, а не ячейку (renderPhases).
 const PHASE_COLUMNS = new Set(
@@ -272,13 +285,29 @@ function applyDetailEdits(
     if (!target || !current) continue;
 
     const { transformer, part } = target;
-    const stateKey = transformer === 'tt' ? 'ttState' : 'tnState';
+    const isTn = transformer === 'tn';
 
-    /// «-…» в марке — трансформатора нет, данных нет тоже (как в экшене).
-    if (part === 'type' && isTransformerAbsentInput(value)) {
+    /// «-…» в марке ТН — ТН нет, данных нет тоже (как в экшене).
+    if (isTn && part === 'type' && isTransformerAbsentInput(value)) {
+      next = { ...next, [tiId]: { ...current, tnState: 'absent', tn: null } };
+      continue;
+    }
+
+    /// «-…» одной строкой в марке ТТ — ТТ нет: TRANSFORMER_ABSENT во всех
+    /// полях, даты пустые (как в экшене).
+    if (!isTn && part === 'type' && isTtAbsentInput(value)) {
       next = {
         ...next,
-        [tiId]: { ...current, [stateKey]: 'absent', [transformer]: null },
+        [tiId]: {
+          ...current,
+          tt: {
+            type: [...TT_ABSENT_PHASES],
+            number: [...TT_ABSENT_PHASES],
+            ratio: TRANSFORMER_ABSENT,
+            dateInstalled: null,
+            dateRemoved: null,
+          },
+        },
       };
       continue;
     }
@@ -306,16 +335,32 @@ function applyDetailEdits(
       if (!values) continue;
 
       patch = part === 'type' ? { type: values } : { number: values };
+
+      if (!isTn && part === 'type') {
+        /// Марка фазы — не «нет», а номер — «---»: «нет» в номере осталось
+        /// от фазы без ТТ — стираем. «---» в марке фазы B — ТТ нет на этой
+        /// фазе: номер фазы B тоже «---» (как в экшене).
+        const number = data.number.map((item, index) =>
+          item === TRANSFORMER_ABSENT &&
+          !isTransformerAbsentInput(values[index] ?? '')
+            ? null
+            : item,
+        ) as PhaseValues;
+
+        if (values[1] === TRANSFORMER_ABSENT) number[1] = TRANSFORMER_ABSENT;
+
+        patch.number = number;
+      }
       hasValue = values.some((item) => item !== null);
     }
 
-    /// Значение — значит, трансформатор есть, как и в экшене; стёртое
-    /// значение состояние не меняет.
+    /// Значение в ТН — значит, ТН есть, как и в экшене; стёртое значение
+    /// состояние не меняет.
     next = {
       ...next,
       [tiId]: {
         ...current,
-        [stateKey]: hasValue ? 'present' : current[stateKey],
+        ...(isTn && hasValue && { tnState: 'present' as const }),
         [transformer]: { ...data, ...patch },
       },
     };
@@ -753,29 +798,49 @@ export function SurveyView({
       : phases.map((item) => item || '—').join('\n');
   }
 
-  /// Трансформатора колонки (ТТ или ТН) у ТИ этой строки нет (state =
-  /// absent): его ячейки — TRANSFORMER_ABSENT одной строкой, без фаз.
-  function absentAt(row: number, col: number): boolean {
-    const ti = optimisticTis[row];
-    const transformer = TRANSFORMER_OF_COLUMN.get(col);
+  /// Текст ячейки после правки одной фазы. «-…» в фазе марки ТН — ТН нет:
+  /// вся ячейка, а не фаза. В марке ТТ: в фазе A — ТТ нет вовсе (PHASE_A),
+  /// в фазе B — ТТ нет на этой фазе (PHASE_B). В фазе C ТТ и в номерах дефис
+  /// — значение фазы (одиночный — пустая фаза).
+  function phaseEditValue(
+    row: number,
+    col: number,
+    index: number,
+    value: string,
+  ): string {
+    if (isTransformerAbsentInput(value)) {
+      if (col === TN_TYPE_COLUMN) return TRANSFORMER_ABSENT;
 
-    if (!ti || !transformer) return false;
+      if (col === TT_TYPE_COLUMN && index === PHASE_A) {
+        return TRANSFORMER_ABSENT;
+      }
 
-    const details = optimisticDetails[ti.id];
+      if (col === TT_TYPE_COLUMN && index === PHASE_B) {
+        return withPhase(row, col, index, TRANSFORMER_ABSENT);
+      }
+    }
 
-    return (
-      (transformer === 'tt' ? details?.ttState : details?.tnState) === 'absent'
-    );
+    return withPhase(row, col, index, value);
   }
 
-  /// Рисуется ли ячейка по фазам (renderPhases). У ТИ без трансформатора —
-  /// нет: в ячейке TRANSFORMER_ABSENT одной строкой. Кроме «ТТ тип» и
-  /// «ТН тип» в режиме правки: там фазы есть и у ТИ без трансформатора — в
-  /// фазу вписывают марку, и он появляется.
+  /// ТН у ТИ этой строки нет (tnState = absent), а колонка — ТН: его
+  /// ячейки — TRANSFORMER_ABSENT одной строкой, без фаз. У ТТ состояния нет.
+  function absentAt(row: number, col: number): boolean {
+    const ti = optimisticTis[row];
+
+    if (!ti || TRANSFORMER_OF_COLUMN.get(col) !== 'tn') return false;
+
+    return optimisticDetails[ti.id]?.tnState === 'absent';
+  }
+
+  /// Рисуется ли ячейка по фазам (renderPhases). У ТИ без ТН — нет: в
+  /// ячейке TRANSFORMER_ABSENT одной строкой. Кроме «ТН тип» в режиме
+  /// правки: там фазы есть и у ТИ без ТН — в фазу вписывают марку, и он
+  /// появляется.
   function phaseLayoutAt(row: number, col: number): boolean {
     return (
       PHASE_COLUMNS.has(col) &&
-      (!absentAt(row, col) || (editable && TRANSFORMER_TYPE_COLUMNS.has(col)))
+      (!absentAt(row, col) || (editable && col === TN_TYPE_COLUMN))
     );
   }
 
@@ -811,11 +876,12 @@ export function SurveyView({
   /// Фазы пофазной ячейки — по элементу на фазу. Выделенная фаза
   /// подсвечена; editor — поле правки на её месте.
   function renderPhases(row: number, col: number, editor?: ReactNode) {
-    /// Трансформатора нет — TRANSFORMER_ABSENT в средней фазе, крайние
+    /// ТН нет — TRANSFORMER_ABSENT в средней фазе, крайние
     /// пустые: ячейка той же высоты, что у ТИ с ним, а «нет» посередине.
+    /// ТТ нет вовсе («---» во всех фазах) — так же (shownPhases).
     const values = absentAt(row, col)
       ? ['', TRANSFORMER_ABSENT, '']
-      : phaseValues(row, col);
+      : shownPhases(phaseValues(row, col));
     const focused = editable && phaseFocusedAt(row, col);
 
     return (
@@ -1407,12 +1473,7 @@ export function SurveyView({
               finishEditing(
                 value === null
                   ? null
-                  : /// «-…» в любой фазе марки — трансформатора нет: вся
-                    /// ячейка, а не фаза. В номере дефис — значение фазы.
-                    TRANSFORMER_TYPE_COLUMNS.has(col) &&
-                      isTransformerAbsentInput(value)
-                    ? TRANSFORMER_ABSENT
-                    : withPhase(row, col, editing.phase!, value),
+                  : phaseEditValue(row, col, editing.phase!, value),
                 refocus,
               )
             }

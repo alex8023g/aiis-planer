@@ -25,6 +25,9 @@ import {
   invalidValueError,
   TRANSFORMER_FIELDS,
   isTransformerAbsentInput,
+  isTtAbsentInput,
+  TRANSFORMER_ABSENT,
+  TT_ABSENT_PHASES,
   transformerFieldOf,
   type TransformerField,
   modemImeiText,
@@ -396,53 +399,113 @@ export async function updateSurveyCells(
         /// Строки Tt и Tn есть у каждой ТИ (upsert — на случай ТИ, заведённой
         /// в обход addTis).
         const { transformer, part } = transformerFieldOf(field)!;
-        let data: Prisma.TtUncheckedUpdateInput & Prisma.TnUncheckedUpdateInput;
+        let data: Prisma.TtUncheckedUpdateInput;
+        let hasValue: boolean;
 
-        if (part === 'type' && isTransformerAbsentInput(value)) {
-          /// «-…» в марке — трансформатора нет (в номере дефис — просто
-          /// значение). Данные стираем все: «нет» с данными не пропустит
-          /// CHECK Tt_absent_is_empty / Tn_absent_is_empty.
-          data = {
-            state: TransformerState.absent,
-            typeA: null,
-            typeB: null,
-            typeC: null,
-            numberA: null,
-            numberB: null,
-            numberC: null,
-            ratio: null,
-            dateInstalled: null,
-            dateRemoved: null,
-          };
+        if (part === 'ratio') {
+          data = { ratio: nullable };
+          hasValue = nullable !== null;
         } else {
-          /// Значение — значит, трансформатор есть: state = present, иначе
-          /// «нет» с данными не пропустит CHECK. Стёртые значения состояние
-          /// не трогают: он есть, значение не выяснили.
-          let hasValue: boolean;
+          const [a, b, c] = parsePhaseValues(value)!;
 
-          if (part === 'ratio') {
-            data = { ratio: nullable };
-            hasValue = nullable !== null;
-          } else {
-            const [a, b, c] = parsePhaseValues(value)!;
-
-            data =
-              part === 'type'
-                ? { typeA: a, typeB: b, typeC: c }
-                : { numberA: a, numberB: b, numberC: c };
-            hasValue = a !== null || b !== null || c !== null;
-          }
-
-          if (hasValue) data.state = TransformerState.present;
+          data =
+            part === 'type'
+              ? { typeA: a, typeB: b, typeC: c }
+              : { numberA: a, numberB: b, numberC: c };
+          hasValue = a !== null || b !== null || c !== null;
         }
 
-        const create = { tiId, ...data } as Prisma.TtUncheckedCreateInput &
-          Prisma.TnUncheckedCreateInput;
-
         if (transformer === 'tt') {
-          await tx.tt.upsert({ where: { tiId }, create, update: data });
+          /// У ТТ состояния нет: «-…» одной строкой в марке — ТТ нет, и
+          /// TRANSFORMER_ABSENT пишется во все его поля (даты — пустые: в
+          /// дату текст не запишешь). «---» в марке фазы B — ТТ нет только
+          /// на ней: номер фазы B — тоже «---» (см. TT_TYPE_COLUMN в
+          /// SurveyView).
+          if (part === 'type' && data.typeB === TRANSFORMER_ABSENT) {
+            data.numberB = TRANSFORMER_ABSENT;
+          }
+
+          /// Марка фазы — не «нет» (не «-…»), а номер фазы — «---»: «нет» в
+          /// номере осталось от фазы без ТТ — стираем. Номер, который правят
+          /// отдельно, не трогаем: это правка марки, не номера.
+          if (part === 'type' && !isTtAbsentInput(value)) {
+            const current = await tx.tt.findUnique({
+              where: { tiId },
+              select: { numberA: true, numberB: true, numberC: true },
+            });
+            const types = [data.typeA, data.typeB, data.typeC] as (
+              string | null
+            )[];
+            const keys = ['numberA', 'numberB', 'numberC'] as const;
+
+            keys.forEach((key, index) => {
+              const type = types[index];
+
+              if (
+                current?.[key] === TRANSFORMER_ABSENT &&
+                data[key] === undefined &&
+                !(type && isTransformerAbsentInput(type))
+              ) {
+                data[key] = null;
+              }
+            });
+          }
+
+          if (part === 'type' && isTtAbsentInput(value)) {
+            const [a, b, c] = TT_ABSENT_PHASES;
+
+            data = {
+              typeA: a,
+              typeB: b,
+              typeC: c,
+              numberA: a,
+              numberB: b,
+              numberC: c,
+              ratio: TRANSFORMER_ABSENT,
+              dateInstalled: null,
+              dateRemoved: null,
+            };
+          }
+
+          await tx.tt.upsert({
+            where: { tiId },
+            create: { tiId, ...data } as Prisma.TtUncheckedCreateInput,
+            update: data,
+          });
         } else {
-          await tx.tn.upsert({ where: { tiId }, create, update: data });
+          let tnData: Prisma.TnUncheckedUpdateInput;
+
+          if (part === 'type' && isTransformerAbsentInput(value)) {
+            /// «-…» в марке ТН — ТН нет (в номере дефис — просто значение).
+            /// Данные стираем все: «нет» с данными не пропустит CHECK
+            /// Tn_absent_is_empty.
+            tnData = {
+              state: TransformerState.absent,
+              typeA: null,
+              typeB: null,
+              typeC: null,
+              numberA: null,
+              numberB: null,
+              numberC: null,
+              ratio: null,
+              dateInstalled: null,
+              dateRemoved: null,
+            };
+          } else {
+            /// Значение — значит, ТН есть: state = present, иначе «нет» с
+            /// данными не пропустит CHECK. Стёртые значения состояние не
+            /// трогают: он есть, значение не выяснили.
+            tnData = {
+              ...(data as Prisma.TnUncheckedUpdateInput),
+              ...(hasValue && { state: TransformerState.present }),
+            };
+          }
+
+          await tx.tn.upsert({
+            where: { tiId },
+            create: { tiId, ...tnData } as Prisma.TnUncheckedCreateInput,
+            update: tnData,
+          });
         }
       } else if (field === 'existingPolling') {
         await tx.ti.update({

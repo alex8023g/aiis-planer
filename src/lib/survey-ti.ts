@@ -256,14 +256,57 @@ export function transformerFieldOf(
     : undefined;
 }
 
-/// Текст ячейки «ТТ тип» или «ТН тип», который значит «трансформатора нет»
-/// (state = absent): начинается с дефиса — «-», «---» (TRANSFORMER_ABSENT,
-/// так ячейку и копируют). Только дефис: длинное тире «—» в тексте ячейки —
-/// пустая фаза. Только в марке: в номере дефис — просто значение
-/// (одиночный — пустая фаза).
+/// Текст, который значит «нет»: в ячейке «ТН тип» — ТН нет (Tn.state =
+/// absent), в фазе B «ТТ тип» — ТТ нет на этой фазе. Начинается с дефиса —
+/// «-», «---» (TRANSFORMER_ABSENT, так ячейку и копируют). Только дефис:
+/// длинное тире «—» в тексте ячейки — пустая фаза. Только в марке: в номере
+/// дефис — просто значение (одиночный — пустая фаза).
 export function isTransformerAbsentInput(value: string): boolean {
   return value.trim().startsWith('-');
 }
+
+/// Значение «ТТ тип», которое значит «ТТ нет» целиком: «-…» одной строкой.
+/// Так его шлёт правка фазы A (и так вставляют ячейку «---»). Правка любой
+/// фазы шлёт все три строкой на фазу — с «---» в фазе A это не «нет»
+/// заново, а правка соседней фазы.
+export function isTtAbsentInput(value: string): boolean {
+  return isTransformerAbsentInput(value) && !/[;\n]/.test(value.trim());
+}
+
+/// Фазы для показа. Во всех трёх TRANSFORMER_ABSENT (ТТ нет вовсе) —
+/// «нет» одной строкой посередине, в фазе B, крайние пустые: как ячейка
+/// ТН, которого нет, а не три одинаковых прочерка. Иначе — как есть.
+export function shownPhases<T extends string | null>(
+  values: readonly T[],
+): (T | '')[] {
+  return allPhasesAbsent(values)
+    ? ['', TRANSFORMER_ABSENT as T, '']
+    : [...values];
+}
+
+/// Во всех трёх фазах TRANSFORMER_ABSENT. По маркам ТТ — ТТ нет вовсе: тогда
+/// и в колонке «фаза» вместо A, B, C — «нет» в фазе B (PHASE_LABELS_ABSENT).
+export function allPhasesAbsent(
+  values: readonly (string | null)[] | null | undefined,
+): boolean {
+  return (
+    values?.length === 3 &&
+    values.every((value) => value === TRANSFORMER_ABSENT)
+  );
+}
+
+/// Колонка «фаза» у ТТ, которого нет: как ячейки его марок и номеров.
+/// Пустые строки — неразрывный пробел: пустую строку в начале и в конце
+/// ячейка не рисует.
+export const PHASE_LABELS_ABSENT = `\u00a0\n${TRANSFORMER_ABSENT}\n\u00a0`;
+
+/// Данные ТТ, которого нет: TRANSFORMER_ABSENT во всех текстовых полях —
+/// «нет» видно в каждой колонке. У ТТ нет состояния, «нет» — в самих данных.
+export const TT_ABSENT_PHASES = [
+  TRANSFORMER_ABSENT,
+  TRANSFORMER_ABSENT,
+  TRANSFORMER_ABSENT,
+] as const;
 
 /// Пофазные значения ТН из текста ячейки: строка на фазу (A, B, C); «;» тоже
 /// разделяет — так удобнее вставлять одной строкой. Прочерк — пустая фаза,

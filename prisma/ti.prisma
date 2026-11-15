@@ -56,14 +56,14 @@ enum WiringScheme {
   indirect
 }
 
-/// Есть ли у ТИ трансформатор (Tt.state, Tn.state). Общий для ТТ и ТН.
+/// Есть ли у ТИ трансформатор напряжения (Tn.state).
 enum TransformerState {
   /// Не выяснили.
   unknown
-  /// Трансформатора нет. Данных тогда нет тоже — следят CHECK
-  /// Tt_absent_is_empty и Tn_absent_is_empty.
+  /// Трансформатора нет. Данных тогда нет тоже — следит CHECK
+  /// Tn_absent_is_empty.
   absent
-  /// Трансформатор есть: марки, номера, коэффициент и даты — в Tt / Tn;
+  /// Трансформатор есть: марки, номера, коэффициент и даты — в Tn;
   /// пустое там — «не выяснили».
   present
 }
@@ -167,17 +167,14 @@ model Meter {
   @@unique([tiId, state])
 }
 
-/// Трансформаторы тока ТИ — по одной строке на ТИ, есть ТТ или нет. Марки
-/// и номера — по фазам A, B, C: по ТТ на фазу. Фазы B может не быть — при
-/// двух ТТ (фазы A и C) её поля пустые. Пустое поле — «не выяснили».
-///
-/// state = absent — данных нет вовсе: это держит CHECK Tt_absent_is_empty
-/// (в миграции ti_tt_state — Prisma CHECK не описывает).
+/// Трансформаторы тока ТИ — по одной строке на ТИ. Марки и номера — по
+/// фазам A, B, C: по ТТ на фазу. Пустое поле — «не выяснили». Фазы B может
+/// не быть — при двух ТТ (фазы A и C): тогда в марке фазы B «---»
+/// (TRANSFORMER_ABSENT).
 model Tt {
-  id            String           @id @default(cuid())
-  tiId          String           @unique
-  ti            Ti               @relation(fields: [tiId], references: [id], onDelete: Cascade)
-  state         TransformerState @default(unknown)
+  id            String    @id @default(cuid())
+  tiId          String    @unique
+  ti            Ti        @relation(fields: [tiId], references: [id], onDelete: Cascade)
   typeA         String?
   typeB         String?
   typeC         String?
@@ -186,8 +183,8 @@ model Tt {
   numberC       String?
   /// Коэффициент трансформации, например «150/5».
   ratio         String?
-  dateInstalled DateTime?        @db.Date
-  dateRemoved   DateTime?        @db.Date
+  dateInstalled DateTime? @db.Date
+  dateRemoved   DateTime? @db.Date
 }
 
 /// Трансформатор напряжения ТИ — по одной строке на ТИ, есть ТН или нет.
