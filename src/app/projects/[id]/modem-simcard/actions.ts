@@ -6,6 +6,7 @@ import { refresh } from 'next/cache';
 
 import { prisma } from '@/lib/prisma';
 import { requireProjectEditor } from '@/lib/projects';
+import { MAIN_SIM_SLOT, RESERVE_SIM_SLOT } from '@/lib/sim-card';
 import type { ActionResult } from '@/lib/types';
 
 export type ModemFields = {
@@ -16,7 +17,43 @@ export type ModemFields = {
   simNumber: string;
   ip: string;
   provider: string;
+  /// Запасная SIM-карта (слот 2). Все пустые — карты нет.
+  reserveSimNumber: string;
+  reserveIp: string;
+  reserveProvider: string;
 };
+
+type SimData = {
+  number: string | null;
+  ip: string | null;
+  provider: string | null;
+};
+
+/// SIM-карты из полей формы — или текст ошибки. Запасная — null, когда все
+/// её поля пустые: такую карту не заводят, а заведённую удаляют.
+function simCardsOf(
+  fields: ModemFields,
+): { main: SimData; reserve: SimData | null } | { error: string } {
+  const main = {
+    number: nullable(fields.simNumber),
+    ip: nullable(fields.ip),
+    provider: nullable(fields.provider),
+  };
+  const reserve = {
+    number: nullable(fields.reserveSimNumber),
+    ip: nullable(fields.reserveIp),
+    provider: nullable(fields.reserveProvider),
+  };
+
+  for (const ip of [main.ip, reserve.ip]) {
+    if (ip !== null && !isIP(ip)) return { error: `«${ip}» — не IP-адрес` };
+  }
+
+  const hasReserve =
+    reserve.number !== null || reserve.ip !== null || reserve.provider !== null;
+
+  return { main, reserve: hasReserve ? reserve : null };
+}
 
 /// Пустое поле — «не знаем», то есть null, а не ''.
 function nullable(value: string): string | null {
@@ -34,11 +71,8 @@ export async function createModem(
   const allowed = await requireProjectEditor(projectId);
   if (!allowed.ok) return allowed;
 
-  const ip = nullable(fields.ip);
-
-  if (ip !== null && !isIP(ip)) {
-    return { ok: false, error: `«${ip}» — не IP-адрес` };
-  }
+  const sims = simCardsOf(fields);
+  if ('error' in sims) return { ok: false, error: sims.error };
 
   await prisma.modem.create({
     data: {
@@ -46,12 +80,13 @@ export async function createModem(
       type: nullable(fields.type),
       imei: nullable(fields.imei),
       port: nullable(fields.port),
-      simCard: {
-        create: {
-          number: nullable(fields.simNumber),
-          ip,
-          provider: nullable(fields.provider),
-        },
+      simCards: {
+        create: [
+          { slot: MAIN_SIM_SLOT, ...sims.main },
+          ...(sims.reserve
+            ? [{ slot: RESERVE_SIM_SLOT, ...sims.reserve }]
+            : []),
+        ],
       },
     },
   });
@@ -62,8 +97,8 @@ export async function createModem(
   return { ok: true };
 }
 
-/// Изменить модем и его SIM-карту. Карты у модема может не быть — тогда она
-/// заводится. Группа модема не меняется: привязывают его в таблице опроса.
+/// Изменить модем и его SIM-карты. Основной карты у модема может не быть —
+/// тогда она заводится; запасная заводится, правится или удаляется по полям. Группа модема не меняется: привязывают его в таблице опроса.
 export async function updateModem(
   projectId: string,
   modemId: string,
@@ -72,11 +107,8 @@ export async function updateModem(
   const allowed = await requireProjectEditor(projectId);
   if (!allowed.ok) return allowed;
 
-  const ip = nullable(fields.ip);
-
-  if (ip !== null && !isIP(ip)) {
-    return { ok: false, error: `«${ip}» — не IP-адрес` };
-  }
+  const sims = simCardsOf(fields);
+  if ('error' in sims) return { ok: false, error: sims.error };
 
   /// По projectId тоже: id пришёл из браузера, чужой модем менять нельзя.
   const modem = await prisma.modem.findFirst({
@@ -88,11 +120,9 @@ export async function updateModem(
     return { ok: false, error: 'Модем не найден — обновите страницу' };
   }
 
-  const simCard = {
-    number: nullable(fields.simNumber),
-    ip,
-    provider: nullable(fields.provider),
-  };
+  const slot = (number: number) => ({
+    modemId_slot: { modemId: modem.id, slot: number },
+  });
 
   await prisma.modem.update({
     where: { id: modem.id },
@@ -100,7 +130,26 @@ export async function updateModem(
       type: nullable(fields.type),
       imei: nullable(fields.imei),
       port: nullable(fields.port),
-      simCard: { upsert: { create: simCard, update: simCard } },
+      simCards: {
+        upsert: [
+          {
+            where: slot(MAIN_SIM_SLOT),
+            create: { slot: MAIN_SIM_SLOT, ...sims.main },
+            update: sims.main,
+          },
+          ...(sims.reserve
+            ? [
+                {
+                  where: slot(RESERVE_SIM_SLOT),
+                  create: { slot: RESERVE_SIM_SLOT, ...sims.reserve },
+                  update: sims.reserve,
+                },
+              ]
+            : []),
+        ],
+        /// Поля запасной карты стёрли — карты больше нет.
+        deleteMany: sims.reserve ? [] : [{ slot: RESERVE_SIM_SLOT }],
+      },
     },
   });
 

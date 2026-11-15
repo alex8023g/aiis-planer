@@ -13,7 +13,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Field, FieldGroup } from '@/components/ui/field';
+import {
+  Field,
+  FieldGroup,
+  FieldLegend,
+  FieldSet,
+} from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { ProjectModem } from '@/lib/tis';
@@ -30,6 +35,9 @@ const emptyFields: ModemFields = {
   simNumber: '',
   ip: '',
   provider: '',
+  reserveSimNumber: '',
+  reserveIp: '',
+  reserveProvider: '',
 };
 
 function fieldsOf(modem: ProjectModem): ModemFields {
@@ -40,6 +48,9 @@ function fieldsOf(modem: ProjectModem): ModemFields {
     simNumber: modem.simNumber ?? '',
     ip: modem.ip ?? '',
     provider: modem.provider ?? '',
+    reserveSimNumber: modem.reserveSimNumber ?? '',
+    reserveIp: modem.reserveIp ?? '',
+    reserveProvider: modem.reserveProvider ?? '',
   };
 }
 
@@ -121,7 +132,7 @@ export function ModemDialog({
           </Button>
         }
       />
-      <DialogContent className='sm:max-w-md'>
+      <DialogContent className='sm:max-w-2xl'>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
@@ -130,10 +141,25 @@ export function ModemDialog({
             {input('type', 'Тип модема')}
             {input('imei', 'IMEI', true)}
             {input('port', 'Порт', true, defaultPort)}
-            {input('simNumber', '№ SIM-карты')}
-            {input('ip', 'IP', true)}
-            {input('provider', 'Оператор')}
           </FieldGroup>
+          <div className='grid gap-4 sm:grid-cols-2'>
+            <FieldSet>
+              <FieldLegend variant='label'>SIM 1 — основная</FieldLegend>
+              <FieldGroup className='gap-3'>
+                {input('simNumber', '№ SIM-карты')}
+                {input('ip', 'IP', true)}
+                {input('provider', 'Оператор')}
+              </FieldGroup>
+            </FieldSet>
+            <FieldSet>
+              <FieldLegend variant='label'>SIM 2 — запасная</FieldLegend>
+              <FieldGroup className='gap-3'>
+                {input('reserveSimNumber', '№ SIM-карты')}
+                {input('reserveIp', 'IP', true)}
+                {input('reserveProvider', 'Оператор')}
+              </FieldGroup>
+            </FieldSet>
+          </div>
           <DialogFooter>
             {submitError && (
               <p className='mr-auto self-center text-sm text-destructive'>

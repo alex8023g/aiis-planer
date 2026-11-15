@@ -1,5 +1,6 @@
 import { EquipmentState, TransformerState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
+import { MAIN_SIM_SLOT } from '@/lib/sim-card';
 
 import type { TiDetails } from './ti-details';
 
@@ -79,7 +80,10 @@ export async function getTiDetails(
               type: true,
               port: true,
               channel: true,
-              simCard: { select: { number: true, provider: true } },
+              simCards: {
+                where: { slot: MAIN_SIM_SLOT },
+                select: { number: true, provider: true },
+              },
             },
           },
           sidePolling: { select: { description: true } },
@@ -131,7 +135,7 @@ export async function getTiDetails(
                     type: modem.type,
                     port: modem.port,
                     channel: modem.channel,
-                    sim: modem.simCard,
+                    sim: modem.simCards[0],
                   }
                 : null,
               sidePolling: group.sidePolling?.description ?? null,

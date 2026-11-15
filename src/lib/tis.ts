@@ -4,6 +4,7 @@ import type {
 } from '@/app/projects/[id]/aiis2/survey-data';
 import { EquipmentState, TransformerState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
+import { MAIN_SIM_SLOT, RESERVE_SIM_SLOT } from '@/lib/sim-card';
 import { getMeterDictionaryChecker } from '@/lib/siDictionaryMatch';
 import {
   cell,
@@ -199,7 +200,10 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
               imei: true,
               port: true,
               channel: true,
-              simCard: { select: { number: true, ip: true, provider: true } },
+              simCards: {
+                where: { slot: MAIN_SIM_SLOT },
+                select: { number: true, ip: true, provider: true },
+              },
             },
           },
           sidePolling: { select: { description: true } },
@@ -233,7 +237,7 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
     const modemSpan = modemSpans[index];
     const uspd = ti.group?.uspd;
     const modem = ti.group?.modem;
-    const sim = modem?.simCard;
+    const sim = modem?.simCards[0];
 
     return [
       text(ti.number),
@@ -302,7 +306,13 @@ export async function getMeterReaderTis(
       group: {
         select: {
           modem: {
-            select: { port: true, simCard: { select: { ip: true } } },
+            select: {
+              port: true,
+              simCards: {
+                where: { slot: MAIN_SIM_SLOT },
+                select: { ip: true },
+              },
+            },
           },
         },
       },
@@ -312,7 +322,7 @@ export async function getMeterReaderTis(
   return tis.map((ti) => ({
     id: ti.id,
     name: ti.name,
-    ip: ti.group?.modem?.simCard?.ip ?? null,
+    ip: ti.group?.modem?.simCards[0]?.ip ?? null,
     port: ti.group?.modem?.port ?? null,
     connectAddress: ti.meters[0]?.meterAddress ?? null,
   }));
@@ -330,6 +340,10 @@ export type ProjectModem = {
   simNumber: string | null;
   ip: string | null;
   provider: string | null;
+  /// Запасная SIM-карта (слот 2). Все null — её нет.
+  reserveSimNumber: string | null;
+  reserveIp: string | null;
+  reserveProvider: string | null;
   /// Номера ТИ группы модема, через запятую. Пусто — модем не привязан к
   /// группе или в группе нет ТИ.
   tiNumbers: string;
@@ -350,7 +364,9 @@ export async function getProjectModems(
       imei: true,
       port: true,
       channel: true,
-      simCard: { select: { number: true, ip: true, provider: true } },
+      simCards: {
+        select: { slot: true, number: true, ip: true, provider: true },
+      },
       group: {
         select: {
           tis: {
@@ -367,18 +383,28 @@ export async function getProjectModems(
 
   return modems
     .toSorted((first, second) => firstPosition(first) - firstPosition(second))
-    .map((modem) => ({
-      id: modem.id,
-      kind: modem.kind ? modemKindLabels[modem.kind] : '',
-      type: modem.type,
-      imei: modem.imei,
-      port: modem.port,
-      channel: channelLabels[modem.channel],
-      simNumber: modem.simCard?.number ?? null,
-      ip: modem.simCard?.ip ?? null,
-      provider: modem.simCard?.provider ?? null,
-      tiNumbers: (modem.group?.tis ?? []).map((ti) => ti.number).join(', '),
-    }));
+    .map((modem) => {
+      const sim = (slot: number) =>
+        modem.simCards.find((card) => card.slot === slot);
+      const main = sim(MAIN_SIM_SLOT);
+      const reserve = sim(RESERVE_SIM_SLOT);
+
+      return {
+        id: modem.id,
+        kind: modem.kind ? modemKindLabels[modem.kind] : '',
+        type: modem.type,
+        imei: modem.imei,
+        port: modem.port,
+        channel: channelLabels[modem.channel],
+        simNumber: main?.number ?? null,
+        ip: main?.ip ?? null,
+        provider: main?.provider ?? null,
+        reserveSimNumber: reserve?.number ?? null,
+        reserveIp: reserve?.ip ?? null,
+        reserveProvider: reserve?.provider ?? null,
+        tiNumbers: (modem.group?.tis ?? []).map((ti) => ti.number).join(', '),
+      };
+    });
 }
 
 /// IMEI свободных модемов проекта — без группы, с записанным IMEI: из них
@@ -431,7 +457,10 @@ export async function getPnrTis(projectId: string): Promise<PnrTi[]> {
             select: {
               id: true,
               imei: true,
-              simCard: { select: { ip: true } },
+              simCards: {
+                where: { slot: MAIN_SIM_SLOT },
+                select: { ip: true },
+              },
             },
           },
         },
@@ -451,7 +480,7 @@ export async function getPnrTis(projectId: string): Promise<PnrTi[]> {
       meterAddress: meter?.meterAddress ?? null,
       modemId: modem?.id ?? null,
       modemImei: modem?.imei ?? null,
-      ip: modem?.simCard?.ip ?? null,
+      ip: modem?.simCards[0]?.ip ?? null,
     };
   });
 }
@@ -495,7 +524,10 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
               kind: true,
               type: true,
               imei: true,
-              simCard: { select: { ip: true } },
+              simCards: {
+                where: { slot: MAIN_SIM_SLOT },
+                select: { ip: true },
+              },
             },
           },
           technicalSolution: { select: { description: true } },
@@ -539,7 +571,7 @@ export async function getSurveyTis(projectId: string): Promise<SurveyTi[]> {
                   kind: group.modem.kind,
                   type: group.modem.type,
                   imei: group.modem.imei,
-                  ip: group.modem.simCard?.ip ?? null,
+                  ip: group.modem.simCards[0]?.ip ?? null,
                 }
               : null,
           }
