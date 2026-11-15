@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {
   Check,
   ChevronDown,
+  FileSpreadsheet,
   Merge,
   Pencil,
   Plug,
@@ -1836,7 +1837,17 @@ export function SurveyView({
             </Button>
           )}
         {error && <span className='text-xs text-destructive'>{error}</span>}
-        <div className='ml-auto'>
+        <div className='ml-auto flex items-center gap-2'>
+          {/* Все ТИ проекта в Excel по форме ПНР (docs/excel_examples/ПНР
+              МКЗ.xlsx) — файл собирает сервер, из сохранённых данных. */}
+          <Button
+            variant='outline'
+            nativeButton={false}
+            render={<a href={`/api/projects/${projectId}/pnr-xlsx`} download />}
+          >
+            <FileSpreadsheet />
+            Excel ПНР
+          </Button>
           <ColumnPicker
             hidden={hidden}
             setVisible={setVisible}
