@@ -11,6 +11,8 @@ import type { ActionResult } from '@/lib/types';
 export type ModemFields = {
   type: string;
   imei: string;
+  /// Пусто — порт по умолчанию.
+  port: string;
   simNumber: string;
   ip: string;
   provider: string;
@@ -43,6 +45,7 @@ export async function createModem(
       projectId,
       type: nullable(fields.type),
       imei: nullable(fields.imei),
+      port: nullable(fields.port),
       simCard: {
         create: {
           number: nullable(fields.simNumber),
@@ -96,6 +99,7 @@ export async function updateModem(
     data: {
       type: nullable(fields.type),
       imei: nullable(fields.imei),
+      port: nullable(fields.port),
       simCard: { upsert: { create: simCard, update: simCard } },
     },
   });

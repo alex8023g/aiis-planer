@@ -20,9 +20,13 @@ import type { ProjectModem } from '@/lib/tis';
 
 import { createModem, updateModem, type ModemFields } from './actions';
 
+/// Порт, на котором модемы обычно слушают опрос.
+const defaultPort = '6001';
+
 const emptyFields: ModemFields = {
   type: '',
   imei: '',
+  port: defaultPort,
   simNumber: '',
   ip: '',
   provider: '',
@@ -32,6 +36,7 @@ function fieldsOf(modem: ProjectModem): ModemFields {
   return {
     type: modem.type ?? '',
     imei: modem.imei ?? '',
+    port: modem.port ?? defaultPort,
     simNumber: modem.simNumber ?? '',
     ip: modem.ip ?? '',
     provider: modem.provider ?? '',
@@ -80,7 +85,12 @@ export function ModemDialog({
     });
   }
 
-  function input(key: keyof ModemFields, label: string, mono = false) {
+  function input(
+    key: keyof ModemFields,
+    label: string,
+    mono = false,
+    placeholder?: string,
+  ) {
     const id = `modem-${key}-${fieldId}`;
 
     return (
@@ -90,6 +100,7 @@ export function ModemDialog({
           id={id}
           name={key}
           autoComplete='off'
+          placeholder={placeholder}
           className={mono ? 'font-mono' : undefined}
           value={fields[key]}
           onChange={(event) =>
@@ -118,6 +129,7 @@ export function ModemDialog({
           <FieldGroup className='gap-3'>
             {input('type', 'Тип модема')}
             {input('imei', 'IMEI', true)}
+            {input('port', 'Порт', true, defaultPort)}
             {input('simNumber', '№ SIM-карты')}
             {input('ip', 'IP', true)}
             {input('provider', 'Оператор')}
