@@ -1,5 +1,10 @@
-import { EquipmentState, TransformerState } from '@/generated/prisma/enums';
+import {
+  Channel,
+  EquipmentState,
+  TransformerState,
+} from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
+import { MAIN_SIM_SLOT, RESERVE_SIM_SLOT } from '@/lib/sim-card';
 
 import type { TiDetails } from './ti-details';
 
@@ -78,8 +83,15 @@ export async function getTiDetails(
               kind: true,
               type: true,
               port: true,
-              channel: true,
-              simCard: { select: { number: true, provider: true } },
+              simCards: {
+                select: {
+                  slot: true,
+                  channel: true,
+                  number: true,
+                  ip: true,
+                  provider: true,
+                },
+              },
             },
           },
           sidePolling: { select: { description: true } },
@@ -107,6 +119,10 @@ export async function getTiDetails(
       };
       const group = ti.group;
       const modem = group?.modem;
+      const simAt = (slot: number) =>
+        modem?.simCards.find((sim) => sim.slot === slot);
+      const mainSim = simAt(MAIN_SIM_SLOT);
+      const reserveSim = simAt(RESERVE_SIM_SLOT);
 
       const details: TiDetails = {
         notes: ti.notes,
@@ -130,8 +146,20 @@ export async function getTiDetails(
                     kind: modem.kind,
                     type: modem.type,
                     port: modem.port,
-                    channel: modem.channel,
-                    sim: modem.simCard,
+                    /// Канал — основной карты; без карты — GPRS, как в базе по
+                    /// умолчанию.
+                    channel: mainSim?.channel ?? Channel.gprs,
+                    sim: mainSim
+                      ? { number: mainSim.number, provider: mainSim.provider }
+                      : null,
+                    reserveSim: reserveSim
+                      ? {
+                          channel: reserveSim.channel,
+                          number: reserveSim.number,
+                          ip: reserveSim.ip,
+                          provider: reserveSim.provider,
+                        }
+                      : null,
                   }
                 : null,
               sidePolling: group.sidePolling?.description ?? null,

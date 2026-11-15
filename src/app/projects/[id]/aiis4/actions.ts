@@ -9,6 +9,7 @@ import { refresh } from 'next/cache';
 import type { Prisma } from '@/generated/prisma/client';
 import { Channel, EquipmentState, ModemKind } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
+import { defaultSimChannel, MAIN_SIM_SLOT } from '@/lib/sim-card';
 import { getProject, requireProjectEditor } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import { getMeterDictionaryChecker } from '@/lib/siDictionaryMatch';
@@ -54,23 +55,26 @@ function isBlankModem(modem: {
   type: string | null;
   imei: string | null;
   port: string | null;
-  channel: Channel;
-  simCard: {
+  simCards: {
+    slot: number;
+    channel: Channel;
     number: string | null;
     ip: string | null;
     provider: string | null;
-  } | null;
+  }[];
 }): boolean {
-  const sim = modem.simCard;
-
   return (
     modem.kind === null &&
     modem.type === null &&
     modem.imei === null &&
     modem.port === null &&
-    modem.channel === Channel.gprs &&
-    (sim === null ||
-      (sim.number === null && sim.ip === null && sim.provider === null))
+    modem.simCards.every(
+      (sim) =>
+        sim.channel === defaultSimChannel(sim.slot) &&
+        sim.number === null &&
+        sim.ip === null &&
+        sim.provider === null,
+    )
   );
 }
 
@@ -98,8 +102,15 @@ async function attachModem(
       type: true,
       imei: true,
       port: true,
-      channel: true,
-      simCard: { select: { number: true, ip: true, provider: true } },
+      simCards: {
+        select: {
+          slot: true,
+          channel: true,
+          number: true,
+          ip: true,
+          provider: true,
+        },
+      },
     },
   });
 
@@ -166,7 +177,7 @@ async function attachModem(
         ...(value === BUILT_IN_MODEM
           ? { kind: ModemKind.builtIn }
           : { imei: value }),
-        simCard: { create: {} },
+        simCards: { create: {} },
       },
     });
   }
@@ -439,19 +450,37 @@ export async function updateSurveyCells(
         /// группы).
         const modem = await tx.modem.findUnique({
           where: { groupId },
-          select: { id: true },
+          select: {
+            id: true,
+            simCards: {
+              where: { slot: MAIN_SIM_SLOT },
+              select: { channel: true },
+            },
+          },
         });
+
+        /// По CSD модем дозваниваются по номеру карты — IP у неё нет.
+        /// Стереть IP можно: так чистят оставшийся от GPRS.
+        if (nullable !== null && modem?.simCards[0]?.channel === Channel.csd) {
+          return `У модема ТИ «${ti.name || 'без названия'}» канал CSD — IP у него нет`;
+        }
 
         if (modem) {
           await tx.simCard.upsert({
-            where: { modemId: modem.id },
+            where: {
+              modemId_slot: { modemId: modem.id, slot: MAIN_SIM_SLOT },
+            },
             create: { modemId: modem.id, ip: nullable },
             update: { ip: nullable },
           });
         } else if (nullable !== null) {
           /// Модема у группы нет — IP заводит его вместе с SIM-картой.
           await tx.modem.create({
-            data: { projectId, groupId, simCard: { create: { ip: nullable } } },
+            data: {
+              projectId,
+              groupId,
+              simCards: { create: { ip: nullable } },
+            },
           });
         }
       }
@@ -592,8 +621,15 @@ export async function mergeTiGroups(
           type: true,
           imei: true,
           port: true,
-          channel: true,
-          simCard: { select: { number: true, ip: true, provider: true } },
+          simCards: {
+            select: {
+              slot: true,
+              channel: true,
+              number: true,
+              ip: true,
+              provider: true,
+            },
+          },
         },
       },
       technicalSolution: { select: { id: true } },
@@ -934,7 +970,14 @@ export async function pingTi(
     select: {
       group: {
         select: {
-          modem: { select: { simCard: { select: { ip: true } } } },
+          modem: {
+            select: {
+              simCards: {
+                where: { slot: MAIN_SIM_SLOT },
+                select: { ip: true },
+              },
+            },
+          },
         },
       },
     },
@@ -942,7 +985,7 @@ export async function pingTi(
 
   if (!ti) return { ok: false, error: 'ТИ не найдена — обновите страницу' };
 
-  const ip = ti.group?.modem?.simCard?.ip?.trim();
+  const ip = ti.group?.modem?.simCards[0]?.ip?.trim();
 
   if (!ip) return { ok: false, error: 'У ТИ не указан IP' };
   if (!isIP(ip)) return { ok: false, error: `«${ip}» — не IP-адрес` };
@@ -996,7 +1039,13 @@ export async function connectMeter(
       group: {
         select: {
           modem: {
-            select: { port: true, simCard: { select: { ip: true } } },
+            select: {
+              port: true,
+              simCards: {
+                where: { slot: MAIN_SIM_SLOT },
+                select: { ip: true },
+              },
+            },
           },
         },
       },
@@ -1005,7 +1054,7 @@ export async function connectMeter(
 
   if (!ti) return { ok: false, error: 'ТИ не найдена — обновите страницу' };
 
-  const ip = ti.group?.modem?.simCard?.ip;
+  const ip = ti.group?.modem?.simCards[0]?.ip;
   const address = ti.meters[0]?.meterAddress;
 
   if (!ip) return { ok: false, error: 'У ТИ не указан IP' };

@@ -230,7 +230,7 @@ async function main() {
               create: {
                 projectId,
                 kind: group.modem ?? undefined,
-                simCard: { create: {} },
+                simCards: { create: {} },
               },
             },
           },

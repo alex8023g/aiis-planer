@@ -2,6 +2,7 @@
 
 import { EquipmentState } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
+import { MAIN_SIM_SLOT } from '@/lib/sim-card';
 import { getProject } from '@/lib/projects';
 import { requireUser } from '@/lib/session';
 import {
@@ -38,7 +39,13 @@ export async function readMeterProfileForTi(
       group: {
         select: {
           modem: {
-            select: { port: true, simCard: { select: { ip: true } } },
+            select: {
+              port: true,
+              simCards: {
+                where: { slot: MAIN_SIM_SLOT },
+                select: { ip: true },
+              },
+            },
           },
         },
       },
@@ -47,7 +54,7 @@ export async function readMeterProfileForTi(
 
   if (!ti) return { ok: false, error: 'ТИ не найдена — обновите страницу' };
 
-  const ip = ti.group?.modem?.simCard?.ip;
+  const ip = ti.group?.modem?.simCards[0]?.ip;
   const address = ti.meters[0]?.meterAddress;
 
   if (!ip) return { ok: false, error: 'У ТИ не указан IP' };

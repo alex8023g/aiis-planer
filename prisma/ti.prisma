@@ -269,12 +269,10 @@ model Modem {
   type      String?
   /// IMEI — по нему модем узнают оператор и системы опроса.
   imei      String?
-  /// Порт, на котором модем слушает опрос. null — порт по умолчанию.
+  /// Порт, на котором модем слушает опрос. null — порт по умолчанию (6001).
   port      String?
-  /// GPRS по умолчанию: так опрашивается почти всё, CSD остаётся редким
-  /// исключением.
-  channel   Channel    @default(gprs)
-  simCard   SimCard?
+  /// Не больше двух: слоты 1 и 2. Опрос и таблицы опроса берут SIM 1.
+  simCards  SimCard[]
 
   @@index([projectId])
 }
@@ -283,11 +281,18 @@ model Modem {
 /// карта приезжает вместе с ним, а старая остаётся при старом.
 model SimCard {
   id       String  @id @default(cuid())
-  modemId  String  @unique
+  modemId  String
   modem    Modem   @relation(fields: [modemId], references: [id], onDelete: Cascade)
+  /// Слот модема: 1 — основная карта, по её IP опрашивают; 2 — запасная.
+  slot     Int     @default(1)
+  /// Канал связи карты. Основная по умолчанию GPRS: так опрашивается почти
+  /// всё. Запасной форма модема ставит CSD (defaultSimChannel).
+  channel  Channel @default(gprs)
   number   String?
   ip       String?
   provider String?
+
+  @@unique([modemId, slot])
 }
 
 /// Примечание к группе ТИ.

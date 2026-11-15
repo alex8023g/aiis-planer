@@ -6,15 +6,73 @@ import { refresh } from 'next/cache';
 
 import { prisma } from '@/lib/prisma';
 import { requireProjectEditor } from '@/lib/projects';
-import type { ActionResult } from '@/lib/types';
+import { MAIN_SIM_SLOT, RESERVE_SIM_SLOT } from '@/lib/sim-card';
+import { Channel, type ActionResult } from '@/lib/types';
 
 export type ModemFields = {
   type: string;
   imei: string;
+  /// Пусто — порт по умолчанию.
+  port: string;
+  channel: Channel;
   simNumber: string;
   ip: string;
   provider: string;
+  /// Запасная SIM-карта (слот 2). Номер, IP и оператор пустые — карты нет.
+  reserveChannel: Channel;
+  reserveSimNumber: string;
+  reserveIp: string;
+  reserveProvider: string;
 };
+
+type SimData = {
+  channel: Channel;
+  number: string | null;
+  ip: string | null;
+  provider: string | null;
+};
+
+/// SIM-карты из полей формы — или текст ошибки. Запасная — null, когда её
+/// номер, IP и оператор пустые: такую карту не заводят, а заведённую
+/// удаляют. Один канал карту не заводит — у запасной он и так CSD.
+function simCardsOf(
+  fields: ModemFields,
+): { main: SimData; reserve: SimData | null } | { error: string } {
+  const main = {
+    channel: fields.channel,
+    number: nullable(fields.simNumber),
+    ip: ipFor(fields.channel, fields.ip),
+    provider: nullable(fields.provider),
+  };
+  const reserve = {
+    channel: fields.reserveChannel,
+    number: nullable(fields.reserveSimNumber),
+    ip: ipFor(fields.reserveChannel, fields.reserveIp),
+    provider: nullable(fields.reserveProvider),
+  };
+
+  /// Каналы пришли из браузера — проверяем, что они из списка.
+  for (const channel of [main.channel, reserve.channel]) {
+    if (!Object.values(Channel).includes(channel)) {
+      return { error: 'Неизвестный канал связи' };
+    }
+  }
+
+  for (const ip of [main.ip, reserve.ip]) {
+    if (ip !== null && !isIP(ip)) return { error: `«${ip}» — не IP-адрес` };
+  }
+
+  const hasReserve =
+    reserve.number !== null || reserve.ip !== null || reserve.provider !== null;
+
+  return { main, reserve: hasReserve ? reserve : null };
+}
+
+/// IP карты. У CSD его нет — модем дозваниваются по номеру, — поэтому IP
+/// не хранится, даже если поле успели заполнить до выбора канала.
+function ipFor(channel: Channel, value: string): string | null {
+  return channel === Channel.Csd ? null : nullable(value);
+}
 
 /// Пустое поле — «не знаем», то есть null, а не ''.
 function nullable(value: string): string | null {
@@ -32,23 +90,22 @@ export async function createModem(
   const allowed = await requireProjectEditor(projectId);
   if (!allowed.ok) return allowed;
 
-  const ip = nullable(fields.ip);
-
-  if (ip !== null && !isIP(ip)) {
-    return { ok: false, error: `«${ip}» — не IP-адрес` };
-  }
+  const sims = simCardsOf(fields);
+  if ('error' in sims) return { ok: false, error: sims.error };
 
   await prisma.modem.create({
     data: {
       projectId,
       type: nullable(fields.type),
       imei: nullable(fields.imei),
-      simCard: {
-        create: {
-          number: nullable(fields.simNumber),
-          ip,
-          provider: nullable(fields.provider),
-        },
+      port: nullable(fields.port),
+      simCards: {
+        create: [
+          { slot: MAIN_SIM_SLOT, ...sims.main },
+          ...(sims.reserve
+            ? [{ slot: RESERVE_SIM_SLOT, ...sims.reserve }]
+            : []),
+        ],
       },
     },
   });
@@ -59,8 +116,8 @@ export async function createModem(
   return { ok: true };
 }
 
-/// Изменить модем и его SIM-карту. Карты у модема может не быть — тогда она
-/// заводится. Группа модема не меняется: привязывают его в таблице опроса.
+/// Изменить модем и его SIM-карты. Основной карты у модема может не быть —
+/// тогда она заводится; запасная заводится, правится или удаляется по полям. Группа модема не меняется: привязывают его в таблице опроса.
 export async function updateModem(
   projectId: string,
   modemId: string,
@@ -69,11 +126,8 @@ export async function updateModem(
   const allowed = await requireProjectEditor(projectId);
   if (!allowed.ok) return allowed;
 
-  const ip = nullable(fields.ip);
-
-  if (ip !== null && !isIP(ip)) {
-    return { ok: false, error: `«${ip}» — не IP-адрес` };
-  }
+  const sims = simCardsOf(fields);
+  if ('error' in sims) return { ok: false, error: sims.error };
 
   /// По projectId тоже: id пришёл из браузера, чужой модем менять нельзя.
   const modem = await prisma.modem.findFirst({
@@ -85,18 +139,36 @@ export async function updateModem(
     return { ok: false, error: 'Модем не найден — обновите страницу' };
   }
 
-  const simCard = {
-    number: nullable(fields.simNumber),
-    ip,
-    provider: nullable(fields.provider),
-  };
+  const slot = (number: number) => ({
+    modemId_slot: { modemId: modem.id, slot: number },
+  });
 
   await prisma.modem.update({
     where: { id: modem.id },
     data: {
       type: nullable(fields.type),
       imei: nullable(fields.imei),
-      simCard: { upsert: { create: simCard, update: simCard } },
+      port: nullable(fields.port),
+      simCards: {
+        upsert: [
+          {
+            where: slot(MAIN_SIM_SLOT),
+            create: { slot: MAIN_SIM_SLOT, ...sims.main },
+            update: sims.main,
+          },
+          ...(sims.reserve
+            ? [
+                {
+                  where: slot(RESERVE_SIM_SLOT),
+                  create: { slot: RESERVE_SIM_SLOT, ...sims.reserve },
+                  update: sims.reserve,
+                },
+              ]
+            : []),
+        ],
+        /// Поля запасной карты стёрли — карты больше нет.
+        deleteMany: sims.reserve ? [] : [{ slot: RESERVE_SIM_SLOT }],
+      },
     },
   });
 

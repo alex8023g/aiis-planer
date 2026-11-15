@@ -18,6 +18,10 @@ const columns: SurveyColumn[] = [
   { title: '№ SIM', minWidth: 140 },
   { title: 'IP', minWidth: 140 },
   { title: 'оператор', minWidth: 120 },
+  { title: 'канал SIM 2', minWidth: 64, compact: true },
+  { title: '№ SIM 2', minWidth: 140 },
+  { title: 'IP SIM 2', minWidth: 140 },
+  { title: 'оператор SIM 2', minWidth: 120 },
 ];
 
 /// Только для просмотра: выбирается вся строка, а не отдельная ячейка.
@@ -45,6 +49,10 @@ export function ModemTable({
         text(modem.simNumber),
         text(modem.ip),
         text(modem.provider),
+        text(modem.reserveChannel),
+        text(modem.reserveSimNumber),
+        text(modem.reserveIp),
+        text(modem.reserveProvider),
       ]),
     [modems],
   );
