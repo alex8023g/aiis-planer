@@ -4,7 +4,7 @@ import {
   TransformerState,
 } from '@/generated/prisma/enums';
 import { prisma } from '@/lib/prisma';
-import { MAIN_SIM_SLOT } from '@/lib/sim-card';
+import { MAIN_SIM_SLOT, RESERVE_SIM_SLOT } from '@/lib/sim-card';
 
 import type { TiDetails } from './ti-details';
 
@@ -84,8 +84,13 @@ export async function getTiDetails(
               type: true,
               port: true,
               simCards: {
-                where: { slot: MAIN_SIM_SLOT },
-                select: { channel: true, number: true, provider: true },
+                select: {
+                  slot: true,
+                  channel: true,
+                  number: true,
+                  ip: true,
+                  provider: true,
+                },
               },
             },
           },
@@ -114,6 +119,10 @@ export async function getTiDetails(
       };
       const group = ti.group;
       const modem = group?.modem;
+      const simAt = (slot: number) =>
+        modem?.simCards.find((sim) => sim.slot === slot);
+      const mainSim = simAt(MAIN_SIM_SLOT);
+      const reserveSim = simAt(RESERVE_SIM_SLOT);
 
       const details: TiDetails = {
         notes: ti.notes,
@@ -139,8 +148,18 @@ export async function getTiDetails(
                     port: modem.port,
                     /// Канал — основной карты; без карты — GPRS, как в базе по
                     /// умолчанию.
-                    channel: modem.simCards[0]?.channel ?? Channel.gprs,
-                    sim: modem.simCards[0] ?? null,
+                    channel: mainSim?.channel ?? Channel.gprs,
+                    sim: mainSim
+                      ? { number: mainSim.number, provider: mainSim.provider }
+                      : null,
+                    reserveSim: reserveSim
+                      ? {
+                          channel: reserveSim.channel,
+                          number: reserveSim.number,
+                          ip: reserveSim.ip,
+                          provider: reserveSim.provider,
+                        }
+                      : null,
                   }
                 : null,
               sidePolling: group.sidePolling?.description ?? null,

@@ -121,8 +121,8 @@ const tiStatusDotColors: Record<TiStatus, string> = {
 /// Итог проверки для точки в ячейке: зелёная — ок, красная — нет. error —
 /// почему нет, во всплывающей подсказке.
 type CheckStatus = { ok: boolean; error?: string };
-/// Колонки, что правятся в режиме правки, и поле под каждой. Тех. решение
-/// и IP — общие на группу (ячейка объединена на группу), остальное — своё у
+/// Колонки, что правятся в режиме правки, и поле под каждой. Тех. решение,
+/// IP и порт — общие на группу (ячейка объединена на группу), остальное — своё у
 /// каждой ТИ. Статус, Uном, схема, замена и RS-485 —
 /// перечисления и да/нет: текст ячейки разбирают parse* из survey-ti.
 const EDITABLE_FIELDS: Record<string, SurveyField> = {
@@ -140,6 +140,8 @@ const EDITABLE_FIELDS: Record<string, SurveyField> = {
   technicalSolution: 'technicalSolution',
   modemImei: 'modemImei',
   ip: 'ip',
+  /// Порт — у модема группы, как IP; сам модем порт не заводит.
+  modemPort: 'port',
   meterAddress: 'connectAddress',
   /// Данные ТТ и ТН — в TiDetails, а не в SurveyTi: правка видна до ответа
   /// сервера через applyDetailEdits. Марки и номера правят по фазе,
@@ -195,6 +197,8 @@ function fieldValue(
   }
 
   switch (field) {
+    case 'port':
+      return details?.group?.modem?.port ?? '';
     case 'number':
       return ti.number;
     case 'name':
@@ -229,7 +233,7 @@ function fieldValue(
 }
 
 /// Правки поверх TiDetails — то же, что applyEdits, для полей, которых нет в
-/// SurveyTi. Сейчас это данные ТТ и ТН — марки, номера и коэффициент:
+/// SurveyTi: порт модема и данные ТТ и ТН — марки, номера и коэффициент:
 /// трансформатора ещё нет — заводим пустой, как экшен.
 function applyDetailEdits(
   details: Record<string, TiDetails>,
@@ -239,6 +243,30 @@ function applyDetailEdits(
 
   for (const { tiId, field, value } of edits) {
     const current = next[tiId];
+
+    /// Порт — у модема группы: меняется у всех ТИ группы сразу. Модема нет
+    /// — экшен откажет, показывать нечего.
+    if (field === 'port') {
+      const groupId = current?.group?.id;
+
+      if (!groupId || !current.group?.modem) continue;
+
+      const port = value.trim() === '' ? null : value.trim();
+
+      next = Object.fromEntries(
+        Object.entries(next).map(([id, item]) => [
+          id,
+          item.group?.id === groupId && item.group.modem
+            ? {
+                ...item,
+                group: { ...item.group, modem: { ...item.group.modem, port } },
+              }
+            : item,
+        ]),
+      );
+      continue;
+    }
+
     const target = transformerFieldOf(field);
 
     if (!target || !current) continue;

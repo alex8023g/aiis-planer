@@ -78,6 +78,13 @@ export type TiDetails = {
       port: string | null;
       channel: DbChannel;
       sim: { number: string | null; provider: string | null } | null;
+      /// Запасная SIM-карта (слот 2); null — её нет.
+      reserveSim: {
+        channel: DbChannel;
+        number: string | null;
+        ip: string | null;
+        provider: string | null;
+      } | null;
     } | null;
     sidePolling: string | null;
     notes: string | null;
@@ -114,6 +121,23 @@ const modemKindLabels: Record<ModemKind, string> = {
   [ModemKind.BuiltIn]: 'встроенный',
   [ModemKind.External]: 'внешний',
 };
+
+/// Значение SIM-карт модема для ячейки: основной, а при запасной — её
+/// второй строкой. Строки не пропускаются, даже пустые: иначе значение
+/// запасной встало бы на место основной. Пустая строка — неразрывный пробел:
+/// пустую строку в начале или в конце ячейка не рисует, и одна оставшаяся
+/// встала бы посередине, а не напротив своей карты в соседних колонках.
+function simLines(
+  main: string | null | undefined,
+  reserve: string | null | undefined,
+): string {
+  if (reserve === undefined) return main ?? '';
+  if (!main && !reserve) return '';
+
+  return `${main || EMPTY_LINE}\n${reserve || EMPTY_LINE}`;
+}
+
+const EMPTY_LINE = '\u00a0';
 
 const channelLabels: Record<Channel, string> = {
   [Channel.Gprs]: 'GPRS',
@@ -280,6 +304,14 @@ export const tableColumns: TableColumn[] = [
     cell: ({ ti }) => text(ti.currentMeter?.number),
   },
   {
+    title: 'сет. адрес сч.',
+    minWidth: 140,
+    id: 'meterAddress',
+    group: 'meter',
+    survey: true,
+    cell: ({ ti }) => text(ti.meterAddress),
+  },
+  {
     title: 'соотв. по справоч АТС',
     minWidth: 72,
     compact: true,
@@ -344,31 +376,6 @@ export const tableColumns: TableColumn[] = [
     survey: true,
     cell: ({ ti, span }) =>
       cell(ti.group?.technicalSolution ?? '', span('group')),
-  },
-  {
-    title: 'IMEI модема',
-    minWidth: 160,
-    id: 'modemImei',
-    group: 'link',
-    survey: true,
-    cell: ({ ti, span }) => cell(modemImeiText(ti.group?.modem), span('group')),
-  },
-  /// IP — у модема группы, поэтому объединяется вместе с решением.
-  {
-    title: 'IP',
-    minWidth: 140,
-    id: 'ip',
-    group: 'link',
-    survey: true,
-    cell: ({ ti, span }) => cell(ti.group?.modem?.ip ?? '', span('group')),
-  },
-  {
-    title: 'сет. адрес сч.',
-    minWidth: 140,
-    id: 'meterAddress',
-    group: 'meter',
-    survey: true,
-    cell: ({ ti }) => text(ti.meterAddress),
   },
   {
     title: 'подключён',
@@ -487,6 +494,14 @@ export const tableColumns: TableColumn[] = [
       cell(details?.group?.modem?.type ?? '', span('modem')),
   },
   {
+    title: 'IMEI модема',
+    minWidth: 160,
+    id: 'modemImei',
+    group: 'link',
+    survey: true,
+    cell: ({ ti, span }) => cell(modemImeiText(ti.group?.modem), span('group')),
+  },
+  {
     title: 'порт',
     minWidth: 80,
     id: 'modemPort',
@@ -501,25 +516,60 @@ export const tableColumns: TableColumn[] = [
     group: 'link',
     cell: ({ details, span }) => {
       const modem = details?.group?.modem;
+      const reserve = modem?.reserveSim;
 
-      return cell(modem ? channelLabels[modem.channel] : '', span('modem'));
+      return cell(
+        modem
+          ? simLines(
+              channelLabels[modem.channel],
+              reserve ? channelLabels[reserve.channel] : undefined,
+            )
+          : '',
+        span('modem'),
+      );
     },
+  },
+  /// IP — у модема группы, поэтому объединяется вместе с решением.
+  {
+    title: 'IP',
+    minWidth: 140,
+    id: 'ip',
+    group: 'link',
+    survey: true,
+    /// Второй строкой — IP запасной карты; правится только первая, основной.
+    cell: ({ ti, details, span }) =>
+      cell(
+        simLines(ti.group?.modem?.ip, details?.group?.modem?.reserveSim?.ip),
+        span('group'),
+      ),
   },
   {
     title: 'SIM №',
     minWidth: 140,
     id: 'simNumber',
     group: 'link',
-    cell: ({ details, span }) =>
-      cell(details?.group?.modem?.sim?.number ?? '', span('modem')),
+    cell: ({ details, span }) => {
+      const modem = details?.group?.modem;
+
+      return cell(
+        simLines(modem?.sim?.number, modem?.reserveSim?.number),
+        span('modem'),
+      );
+    },
   },
   {
     title: 'SIM оператор',
     minWidth: 120,
     id: 'simProvider',
     group: 'link',
-    cell: ({ details, span }) =>
-      cell(details?.group?.modem?.sim?.provider ?? '', span('modem')),
+    cell: ({ details, span }) => {
+      const modem = details?.group?.modem;
+
+      return cell(
+        simLines(modem?.sim?.provider, modem?.reserveSim?.provider),
+        span('modem'),
+      );
+    },
   },
 
   {
