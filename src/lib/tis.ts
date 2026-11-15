@@ -18,7 +18,13 @@ import {
   voltageClassLabels,
   yesNo,
 } from '@/lib/survey-cells';
-import { TRANSFORMER_ABSENT, type SurveyTi } from '@/lib/survey-ti';
+import {
+  allPhasesAbsent,
+  PHASE_LABELS_ABSENT,
+  shownPhases,
+  TRANSFORMER_ABSENT,
+  type SurveyTi,
+} from '@/lib/survey-ti';
 import { Channel, ModemKind } from '@/lib/types';
 
 /// Все поля ТИ, какие есть в схеме, — по колонке на поле. Пустых колонок тут
@@ -86,8 +92,12 @@ const PHASES = ['A', 'B', 'C'] as const;
 /// «ТТ тип» и «ТТ №», и подпись не приходится повторять в каждой из них.
 /// Колонка пустая, когда ТТ на ТИ нет: подписи без значений подсказывали бы,
 /// что фазы где-то есть.
-function phaseLabels(present: boolean): SurveyCell {
-  return { v: present ? PHASES.join('\n') : '' };
+/// absent — ТТ нет вовсе (марки — «---» во всех фазах): «---», как в его
+/// ячейках марок и номеров.
+function phaseLabels(present: boolean, absent = false): SurveyCell {
+  if (!present) return { v: '' };
+
+  return { v: absent ? PHASE_LABELS_ABSENT : PHASES.join('\n') };
 }
 
 /// Пофазное поле (ТТ стоят по одному на фазу) — одной ячейкой в три строки, по
@@ -102,11 +112,18 @@ function phaseCell(
 ): SurveyCell {
   if (values === null) return { v: '' };
 
-  return { v: PHASES.map((_, index) => values[index] ?? '—').join('\n') };
+  const shown = shownPhases(values);
+
+  /// Пустая строка от shownPhases — неразрывный пробел: пустую строку в
+  /// начале и в конце ячейка не рисует, и «нет» уехало бы из фазы B.
+  return {
+    v: PHASES.map((_, index) =>
+      shown[index] === '' ? '\u00a0' : (shown[index] ?? '—'),
+    ).join('\n'),
+  };
 }
 
 type DbTransformerRow = {
-  state: TransformerState;
   typeA: string | null;
   typeB: string | null;
   typeC: string | null;
@@ -116,25 +133,40 @@ type DbTransformerRow = {
   ratio: string | null;
 };
 
-/// Ячейки ТТ или ТН: фаза, марка, номер, коэффициент. ТТ и ТН у ТИ по
-/// одному, и строка есть всегда; данные — только у трансформатора, который
-/// есть (state = present), «не выяснили» — пустые колонки, «нет» —
-/// TRANSFORMER_ABSENT во всех.
-function transformerCells(row: DbTransformerRow | null): SurveyCell[] {
-  if (row?.state === TransformerState.absent) {
+/// Ячейки ТТ или ТН: фаза, марка, номер, коэффициент. row — данные
+/// трансформатора, который есть; null — не выяснили: пустые колонки. absent
+/// — трансформатора нет: TRANSFORMER_ABSENT во всех (есть только у ТН).
+function transformerCells(
+  row: DbTransformerRow | null,
+  absent = false,
+): SurveyCell[] {
+  if (absent) {
     return Array.from({ length: 4 }, () => text(TRANSFORMER_ABSENT));
   }
 
-  const present = row?.state === TransformerState.present ? row : null;
-
   return [
-    phaseLabels(present !== null),
-    phaseCell(present ? [present.typeA, present.typeB, present.typeC] : null),
-    phaseCell(
-      present ? [present.numberA, present.numberB, present.numberC] : null,
+    phaseLabels(
+      row !== null,
+      allPhasesAbsent(row && [row.typeA, row.typeB, row.typeC]),
     ),
-    ratioCell(present?.ratio),
+    phaseCell(row ? [row.typeA, row.typeB, row.typeC] : null),
+    phaseCell(row ? [row.numberA, row.numberB, row.numberC] : null),
+    ratioCell(row?.ratio),
   ];
+}
+
+/// Есть ли у ТТ хоть одно значение. Состояния у ТТ нет: пустой — не
+/// выяснили, и его колонки пустые, без подписей фаз.
+function ttWithData(row: DbTransformerRow | null): DbTransformerRow | null {
+  if (!row) return null;
+
+  const { typeA, typeB, typeC, numberA, numberB, numberC, ratio } = row;
+
+  return [typeA, typeB, typeC, numberA, numberB, numberC, ratio].some(
+    (value) => value !== null,
+  )
+    ? row
+    : null;
 }
 
 const modemKindLabels: Record<ModemKind, string> = {
@@ -172,7 +204,6 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       },
       tt: {
         select: {
-          state: true,
           typeA: true,
           typeB: true,
           typeC: true,
@@ -260,8 +291,11 @@ export async function getTiRows(projectId: string): Promise<SurveyCell[][]> {
       text(next?.number),
       yesNo(next?.isCompliant),
 
-      ...transformerCells(ti.tt),
-      ...transformerCells(ti.tn),
+      ...transformerCells(ttWithData(ti.tt)),
+      ...transformerCells(
+        ti.tn?.state === TransformerState.present ? ti.tn : null,
+        ti.tn?.state === TransformerState.absent,
+      ),
 
       cell(uspd?.type ?? '', uspdSpan),
       cell(uspd?.number ?? '', uspdSpan),

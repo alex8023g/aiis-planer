@@ -46,6 +46,11 @@ type DbTransformer = {
   dateRemoved: Date | null;
 };
 
+/// Есть ли у трансформатора хоть одно значение.
+function hasData(row: DbTransformer): boolean {
+  return Object.values(row).some((value) => value !== null);
+}
+
 function transformer(row: DbTransformer | undefined): TiDetails['tt'] {
   if (!row) return null;
 
@@ -72,7 +77,7 @@ export async function getTiDetails(
       meters: { select: meterSelect },
       /// ТТ и ТН у ТИ по одному, и строки есть всегда — с состоянием «есть
       /// ли трансформатор».
-      tt: { select: { ...transformerSelect, state: true } },
+      tt: { select: transformerSelect },
       tn: { select: { ...transformerSelect, state: true } },
       group: {
         select: {
@@ -129,11 +134,10 @@ export async function getTiDetails(
         currentMeter: meter(EquipmentState.current),
         proposedMeter: meter(EquipmentState.proposed),
         removedMeter: meter(EquipmentState.removed),
-        /// Данные трансформатора — только когда он есть: у «нет» и «не
-        /// выяснили» его колонки пустые.
-        ttState: ti.tt?.state ?? TransformerState.unknown,
-        tt:
-          ti.tt?.state === TransformerState.present ? transformer(ti.tt) : null,
+        /// ТТ — данные, если есть хоть одно значение: у пустого колонки
+        /// пустые. ТН — только когда он есть: у «нет» и «не выяснили» его
+        /// колонки пустые.
+        tt: ti.tt && hasData(ti.tt) ? transformer(ti.tt) : null,
         tnState: ti.tn?.state ?? TransformerState.unknown,
         tn:
           ti.tn?.state === TransformerState.present ? transformer(ti.tn) : null,

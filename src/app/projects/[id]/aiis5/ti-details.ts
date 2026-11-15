@@ -29,7 +29,10 @@ import {
 import {
   NO_PROPOSED_METER,
   TRANSFORMER_ABSENT,
+  allPhasesAbsent,
   modemImeiText,
+  PHASE_LABELS_ABSENT,
+  shownPhases,
   suggestedWiring,
   tiStatusLabels,
   wiringLabels,
@@ -62,11 +65,11 @@ export type TiDetails = {
   currentMeter: Meter | null;
   proposedMeter: Meter | null;
   removedMeter: (Meter & { type: string | null }) | null;
-  /// Есть ли у ТИ ТТ и ТН: unknown — не выяснили, absent — нет, present —
-  /// есть.
-  ttState: DbTransformerState;
+  /// Есть ли у ТИ ТН: unknown — не выяснили, absent — нет, present — есть.
+  /// У ТТ состояния нет — только данные.
   tnState: DbTransformerState;
-  /// Данные ТТ и ТН; null — трансформатор не present (см. ttState, tnState).
+  /// Данные ТТ и ТН; null — у ТТ нет ни одного значения, ТН не present (см.
+  /// tnState).
   tt: Transformer | null;
   tn: Transformer | null;
   group: {
@@ -165,7 +168,15 @@ function phaseCell(
 ): SurveyCell {
   if (!values) return { v: '' };
 
-  return { v: PHASES.map((_, index) => values[index] ?? '—').join('\n') };
+  const shown = shownPhases(values);
+
+  /// Пустая строка от shownPhases — неразрывный пробел: пустую строку в
+  /// начале и в конце ячейка не рисует, и «нет» уехало бы из фазы B.
+  return {
+    v: PHASES.map((_, index) =>
+      shown[index] === '' ? '\u00a0' : (shown[index] ?? '—'),
+    ).join('\n'),
+  };
 }
 
 /// Колонки ТТ или ТН — одинаковые, различаются только данными.
@@ -184,7 +195,18 @@ function transformerColumns(
       compact: true,
       id: `${group}Phase`,
       group,
-      cell: (row) => ({ v: of(row) ? PHASES.join('\n') : '' }),
+      /// У ТТ, которого нет (марки — «---» во всех фазах), — тоже «---».
+      cell: (row) => {
+        const data = of(row);
+
+        if (!data) return { v: '' };
+
+        return {
+          v: allPhasesAbsent(data.type)
+            ? PHASE_LABELS_ABSENT
+            : PHASES.join('\n'),
+        };
+      },
     },
     {
       title: `${label} тип`,
@@ -223,15 +245,15 @@ function transformerColumns(
     },
   ];
 
-  const state = group === 'tt' ? 'ttState' : 'tnState';
+  /// У ТТ состояния нет — колонки как есть.
+  if (group === 'tt') return columns;
 
-  /// Трансформатора нет (state = absent) — во всех его колонках
-  /// TRANSFORMER_ABSENT: «нет» видно прямо, а пустая ячейка остаётся «не
-  /// выяснили».
+  /// ТН нет (tnState = absent) — во всех его колонках TRANSFORMER_ABSENT:
+  /// «нет» видно прямо, а пустая ячейка остаётся «не выяснили».
   return columns.map((column) => ({
     ...column,
     cell: (row) =>
-      row.details?.[state] === 'absent'
+      row.details?.tnState === 'absent'
         ? { v: TRANSFORMER_ABSENT }
         : column.cell(row),
   }));
