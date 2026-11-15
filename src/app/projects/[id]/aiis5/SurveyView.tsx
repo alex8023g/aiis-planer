@@ -972,6 +972,19 @@ export function SurveyView({
     row: number,
     col: number,
   ): boolean {
+    /// Ctrl+C на одной пофазной ячейке — только выделенная фаза, а не все
+    /// три: выделена фаза, её и копируем. Иначе — как обычно (выделение).
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      !event.altKey &&
+      event.key.toLowerCase() === 'c' &&
+      phaseFocusedAt(row, col)
+    ) {
+      event.preventDefault();
+      void copyText(phaseValues(row, col)[phase] ?? '');
+      return true;
+    }
+
     if (event.ctrlKey || event.metaKey || event.altKey) return false;
 
     if (event.key === 'Enter' || event.key === 'F2') {
