@@ -1,6 +1,7 @@
 /// Выгрузка ТИ проекта в Excel по форме ПНР (docs/excel_examples/ПНР МКЗ.xlsx):
-/// по строке на ТИ — счётчик, ТТ, ТН, модем и SIM-карта. Колонок №,
-/// наименования ТИ и Uном образца нет, номера фаз ТТ и ТН — одной ячейкой.
+/// по строке на ТИ — её номер, наименование, счётчик, ТТ, ТН, модем и SIM-карта.
+/// В образце нет колонок № и наименования ТИ; Uном также отсутствует, номера
+/// фаз ТТ и ТН — одной ячейкой.
 ///
 /// Колонок «КТ» (класс точности) образца нет: в базе класс точности не
 /// хранится.
@@ -20,16 +21,16 @@ import type { TiDetails } from './ti-details';
 /// «Нет» — как в базе, TRANSFORMER_ABSENT («---»).
 const ABSENT = TRANSFORMER_ABSENT;
 
-const COLUMN_COUNT = 12;
+const COLUMN_COUNT = 14;
 
-/// Ширины колонок — как в образце; у номеров ТТ и ТН — на один номер.
+/// Ширины колонок — как в образце, с добавленными колонками номера и имени ТИ.
 const COLUMN_WIDTHS = [
-  29.3, 18.3, 8.6, 22, 16.1, 14, 8.1, 13.7, 14, 14, 22.6, 31.1,
+  14, 32, 29.3, 18.3, 8.6, 22, 16.1, 14, 8.1, 13.7, 14, 14, 22.6, 31.1,
 ];
 
 /// Колонки, общие у модема группы: IP/port, модем, SIM — объединяются на ТИ
 /// одной группы, как в образце.
-const MODEM_COLUMNS = [4, 11, 12];
+const MODEM_COLUMNS = [6, 13, 14];
 
 const thin = { style: 'thin' } as const;
 const border = { top: thin, left: thin, bottom: thin, right: thin };
@@ -90,6 +91,8 @@ function rowValues(ti: SurveyTi, details: TiDetails | undefined): string[] {
   const port = modem?.port ?? '';
 
   return [
+    ti.number,
+    ti.name,
     ti.currentMeter?.type ?? '',
     ti.currentMeter?.number ?? '',
     ti.meterAddress ?? '',
@@ -107,30 +110,34 @@ function writeHeader(sheet: ExcelJS.Worksheet) {
     sheet.getCell(address).value = value;
   };
 
-  set('A1', 'Прибор учета');
-  set('E1', 'Трансформатор тока');
-  set('H1', 'Трансформатор напряжения');
-  set('K1', 'Модем');
+  set('A1', '№ ТИ на схеме');
+  set('B1', 'Наименование ТИ');
+  set('C1', 'Прибор учета');
+  set('G1', 'Трансформатор тока');
+  set('J1', 'Трансформатор напряжения');
+  set('M1', 'Модем');
 
-  set('A2', 'Тип');
-  set('B2', 'Зав. \nномер');
-  set('C2', 'Сет. адр.');
-  set('D2', 'IP/port');
-  set('E2', 'Тип');
-  set('F2', 'зав. №');
-  set('G2', 'Ктт');
-  set('H2', 'Тип');
-  set('I2', 'зав. №');
-  set('J2', 'Ктн');
-  set('K2', 'Тип/IMEI');
-  set('L2', 'Номер sim-карты');
+  set('C2', 'Тип');
+  set('D2', 'Зав. \nномер');
+  set('E2', 'Сет. адр.');
+  set('F2', 'IP/port');
+  set('G2', 'Тип');
+  set('H2', 'зав. №');
+  set('I2', 'Ктт');
+  set('J2', 'Тип');
+  set('K2', 'зав. №');
+  set('L2', 'Ктн');
+  set('M2', 'Тип/IMEI');
+  set('N2', 'Номер sim-карты');
 
-  sheet.mergeCells('A1:D1');
-  sheet.mergeCells('E1:G1');
-  sheet.mergeCells('H1:J1');
-  sheet.mergeCells('K1:L1');
+  sheet.mergeCells('A1:A3');
+  sheet.mergeCells('B1:B3');
+  sheet.mergeCells('C1:F1');
+  sheet.mergeCells('G1:I1');
+  sheet.mergeCells('J1:L1');
+  sheet.mergeCells('M1:N1');
 
-  for (let col = 1; col <= COLUMN_COUNT; col++) {
+  for (let col = 3; col <= COLUMN_COUNT; col++) {
     sheet.mergeCells(2, col, 3, col);
   }
 
