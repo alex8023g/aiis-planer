@@ -1,3 +1,6 @@
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import { cleanEquipmentName, equipmentKey } from '../../src/lib/equipment';
 
@@ -127,6 +130,23 @@ const KITS: {
   items: { kind: string; model: string | null; quantity: number | null }[];
 }[] = [
   {
+    name: 'Шкаф связи',
+    items: [
+      { kind: 'Шкаф связи', model: 'ЩМП 02 IP54 250х300х155мм', quantity: 1 },
+      { kind: 'GPRS терминал', model: 'iRZ ATM42.В', quantity: 1 },
+      { kind: 'Антенна', model: 'ЛИДЕР-М 700-2700 МГц', quantity: 1 },
+      { kind: 'Автомат 2х полюсный', model: 'DEKraft 2Р С6А', quantity: 1 },
+      { kind: 'DIN-рейка', model: '07-03-009 7,5х35х250мм', quantity: 1 },
+      { kind: 'Кабель питания', model: 'ВВГнг 2х1.5', quantity: 5 },
+      { kind: 'Интерфейсный кабель', model: 'F/UTP 2x2x0,52 мм', quantity: 5 },
+      {
+        kind: 'Кабель заземления',
+        model: 'ПуГВнг(А)LS желто-зеленый 1х4',
+        quantity: 5,
+      },
+    ],
+  },
+  {
     name: 'Шкаф связи с актив. разветвителем',
     items: [
       { kind: 'Шкаф связи', model: 'ЩМП 02 IP54 250х300х155мм', quantity: 1 },
@@ -184,4 +204,36 @@ export async function seedKits(prisma: PrismaClient): Promise<number> {
   }
 
   return KITS.length;
+}
+
+async function main() {
+  await import('dotenv/config');
+
+  const { PrismaPg } = await import('@prisma/adapter-pg');
+  const { PrismaClient: Client } =
+    await import('../../src/generated/prisma/client');
+
+  const prisma = new Client({
+    adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+  });
+
+  try {
+    const kinds = await seedEquipment(prisma);
+    console.log(`seeded ${kinds} equipment kinds`);
+
+    const kits = await seedKits(prisma);
+    console.log(`seeded ${kits} equipment kits`);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+if (
+  process.argv[1] &&
+  pathToFileURL(resolve(process.argv[1])).href === import.meta.url
+) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
 }
