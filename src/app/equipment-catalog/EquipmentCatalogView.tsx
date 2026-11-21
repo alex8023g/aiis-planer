@@ -68,7 +68,18 @@ export function EquipmentCatalogView({
       />
       <main className='mx-auto flex flex-col items-start gap-4 p-2 sm:gap-6 sm:p-4 lg:flex-row'>
         <section className='w-fit max-w-full overflow-x-auto rounded border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900'>
-          <h2 className='mb-2 text-sm font-semibold'>Виды и марки</h2>
+          <div className='mb-2 flex min-h-7 flex-wrap items-center gap-3'>
+            <h2 className='text-sm font-semibold'>Виды и марки</h2>
+            {editable && editing && (
+              <Link
+                href='/equipment-catalog/edit'
+                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              >
+                <Pencil />
+                Редактировать
+              </Link>
+            )}
+          </div>
           {kinds.length === 0 ? (
             <p className='text-sm text-neutral-500'>Справочник пуст</p>
           ) : (
@@ -134,7 +145,7 @@ export function EquipmentCatalogView({
           )}
         </section>
         <section className='w-fit max-w-full overflow-x-auto rounded border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900'>
-          <div className='mb-2 flex flex-wrap items-center gap-3'>
+          <div className='mb-2 flex min-h-7 flex-wrap items-center gap-3'>
             <h2 className='text-sm font-semibold'>Типовые комплекты</h2>
             {editable && editing && (
               <Link
@@ -163,7 +174,7 @@ export function EquipmentCatalogView({
                   key={kit.id}
                   className='overflow-hidden rounded-md border border-neutral-200 shadow-xs dark:border-neutral-700'
                 >
-                  <div className='flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-800/60'>
+                  <div className='flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-800/60'>
                     <h3 className='text-sm font-semibold'>{kit.name}</h3>
                     {editable && editing && (
                       <div className='flex gap-2'>
