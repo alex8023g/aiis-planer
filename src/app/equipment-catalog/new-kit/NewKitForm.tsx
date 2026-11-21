@@ -5,7 +5,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition, type SubmitEvent } from 'react';
 
-import { createEquipmentKit } from '@/app/equipment-catalog/actions';
+import {
+  createEquipmentKit,
+  updateEquipmentKit,
+} from '@/app/equipment-catalog/actions';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -24,7 +27,9 @@ type Equipment = {
   model: string | null;
 };
 
-type KitRow = Equipment & { quantity: string };
+export type KitRow = Equipment & { quantity: string };
+
+export type InitialKit = { id: string; name: string; items: KitRow[] };
 
 function equipmentRows(kinds: Kind[]): Equipment[] {
   return kinds.flatMap((kind): Equipment[] =>
@@ -56,10 +61,16 @@ const th = 'px-2 py-1.5 text-left font-medium';
 const td = 'px-2 py-1';
 const row = 'border-t border-neutral-200 dark:border-neutral-800';
 
-export function NewKitForm({ kinds }: { kinds: Kind[] }) {
+export function NewKitForm({
+  kinds,
+  initial,
+}: {
+  kinds: Kind[];
+  initial?: InitialKit;
+}) {
   const router = useRouter();
-  const [name, setName] = useState('');
-  const [kit, setKit] = useState<KitRow[]>([]);
+  const [name, setName] = useState(initial?.name ?? '');
+  const [kit, setKit] = useState<KitRow[]>(initial?.items ?? []);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -84,14 +95,14 @@ export function NewKitForm({ kinds }: { kinds: Kind[] }) {
     event.preventDefault();
     setError(null);
     startTransition(async () => {
-      const result = await createEquipmentKit(
-        name,
-        kit.map(({ kindId, modelId, quantity }) => ({
-          kindId,
-          modelId,
-          quantity,
-        })),
-      );
+      const draft = kit.map(({ kindId, modelId, quantity }) => ({
+        kindId,
+        modelId,
+        quantity,
+      }));
+      const result = initial
+        ? await updateEquipmentKit(initial.id, name, draft)
+        : await createEquipmentKit(name, draft);
       if (!result.ok) {
         setError(result.error);
         return;

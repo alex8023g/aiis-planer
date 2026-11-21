@@ -13,15 +13,19 @@ export type KitDraftItem = {
   quantity: string;
 };
 
-export async function createEquipmentKit(
+type KitRows = {
+  kindId: string;
+  modelId: string | null;
+  quantity: number | null;
+  position: number;
+}[];
+
+async function parseKit(
   name: string,
   items: KitDraftItem[],
-): Promise<ActionResult> {
-  const user = await requireUser();
-  if (!canEdit(user)) {
-    return { ok: false, error: 'Только просмотр: добавлять комплекты нельзя' };
-  }
-
+): Promise<
+  { ok: true; name: string; rows: KitRows } | { ok: false; error: string }
+> {
   if (typeof name !== 'string' || !cleanEquipmentName(name)) {
     return { ok: false, error: 'Укажите название комплекта' };
   }
@@ -35,12 +39,7 @@ export async function createEquipmentKit(
   const kinds = new Map(
     catalog.map((kind) => [kind.id, new Set(kind.models.map((m) => m.id))]),
   );
-  const rows: {
-    kindId: string;
-    modelId: string | null;
-    quantity: number | null;
-    position: number;
-  }[] = [];
+  const rows: KitRows = [];
 
   for (const [position, item] of items.entries()) {
     if (
@@ -77,24 +76,94 @@ export async function createEquipmentKit(
     });
   }
 
+  return { ok: true, name: cleanEquipmentName(name), rows };
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'P2002'
+  );
+}
+
+export async function createEquipmentKit(
+  name: string,
+  items: KitDraftItem[],
+): Promise<ActionResult> {
+  const user = await requireUser();
+  if (!canEdit(user)) {
+    return { ok: false, error: 'Только просмотр: добавлять комплекты нельзя' };
+  }
+
+  const kit = await parseKit(name, items);
+  if (!kit.ok) return kit;
+
   try {
     await prisma.equipmentKit.create({
-      data: {
-        name: cleanEquipmentName(name),
-        items: { createMany: { data: rows } },
-      },
+      data: { name: kit.name, items: { createMany: { data: kit.rows } } },
     });
   } catch (error) {
-    if (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      error.code === 'P2002'
-    ) {
+    if (isUniqueViolation(error)) {
       return { ok: false, error: 'Комплект с таким названием уже существует' };
     }
     throw error;
   }
+
+  refresh();
+  return { ok: true };
+}
+
+export async function updateEquipmentKit(
+  id: string,
+  name: string,
+  items: KitDraftItem[],
+): Promise<ActionResult> {
+  const user = await requireUser();
+  if (!canEdit(user)) {
+    return { ok: false, error: 'Только просмотр: менять комплекты нельзя' };
+  }
+  if (typeof id !== 'string') return { ok: false, error: 'Комплект не найден' };
+
+  const kit = await parseKit(name, items);
+  if (!kit.ok) return kit;
+
+  try {
+    await prisma.$transaction([
+      prisma.equipmentKitItem.deleteMany({ where: { kitId: id } }),
+      prisma.equipmentKit.update({
+        where: { id },
+        data: { name: kit.name, items: { createMany: { data: kit.rows } } },
+      }),
+    ]);
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      return { ok: false, error: 'Комплект с таким названием уже существует' };
+    }
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'P2025'
+    ) {
+      return { ok: false, error: 'Комплект не найден' };
+    }
+    throw error;
+  }
+
+  refresh();
+  return { ok: true };
+}
+
+export async function deleteEquipmentKit(id: string): Promise<ActionResult> {
+  const user = await requireUser();
+  if (!canEdit(user)) {
+    return { ok: false, error: 'Только просмотр: удалять комплекты нельзя' };
+  }
+  if (typeof id !== 'string') return { ok: false, error: 'Комплект не найден' };
+
+  await prisma.equipmentKit.deleteMany({ where: { id } });
 
   refresh();
   return { ok: true };

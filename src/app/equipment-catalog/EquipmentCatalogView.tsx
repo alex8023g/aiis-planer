@@ -1,9 +1,10 @@
 'use client';
 
-import { Pencil, Plus } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 
+import { deleteEquipmentKit } from '@/app/equipment-catalog/actions';
 import { Header } from '@/components/Header';
 import { Button, buttonVariants } from '@/components/ui/button';
 import type { SessionUser } from '@/lib/session';
@@ -28,7 +29,22 @@ export function EquipmentCatalogView({
   editable: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
   const modelCount = kinds.reduce((sum, kind) => sum + kind.models.length, 0);
+
+  function removeKit(kit: EquipmentKitOption) {
+    if (
+      !window.confirm(`Удалить комплект «${kit.name}»? Это нельзя отменить.`)
+    ) {
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await deleteEquipmentKit(kit.id);
+      if (!result.ok) setError(result.error);
+    });
+  }
 
   return (
     <div className='min-h-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100'>
@@ -130,18 +146,50 @@ export function EquipmentCatalogView({
               </Link>
             )}
           </div>
+          {error && (
+            <p
+              role='alert'
+              className='mb-2 text-sm text-red-600 dark:text-red-400'
+            >
+              {error}
+            </p>
+          )}
           {kits.length === 0 ? (
             <p className='text-sm text-neutral-500'>Комплектов пока нет</p>
           ) : (
             <div className='flex flex-col gap-3'>
               {kits.map((kit) => (
                 <article
-                  key={kit.name}
+                  key={kit.id}
                   className='overflow-hidden rounded-md border border-neutral-200 shadow-xs dark:border-neutral-700'
                 >
-                  <h3 className='border-b border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold dark:border-neutral-700 dark:bg-neutral-800/60'>
-                    {kit.name}
-                  </h3>
+                  <div className='flex flex-wrap items-center justify-between gap-2 border-b border-neutral-200 bg-neutral-50 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-800/60'>
+                    <h3 className='text-sm font-semibold'>{kit.name}</h3>
+                    {editable && editing && (
+                      <div className='flex gap-2'>
+                        <Link
+                          href={`/equipment-catalog/${kit.id}/edit`}
+                          className={buttonVariants({
+                            variant: 'outline',
+                            size: 'sm',
+                          })}
+                        >
+                          <Pencil />
+                          Редактировать
+                        </Link>
+                        <Button
+                          variant='outline'
+                          size='sm'
+                          className='text-red-600 dark:text-red-400'
+                          disabled={pending}
+                          onClick={() => removeKit(kit)}
+                        >
+                          <Trash2 />
+                          Удалить
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                   <table className='w-full border-collapse text-sm'>
                     <thead className='text-neutral-500 dark:text-neutral-400'>
                       <tr>
