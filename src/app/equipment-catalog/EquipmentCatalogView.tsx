@@ -1,11 +1,11 @@
 'use client';
 
-import { Pencil } from 'lucide-react';
+import { Pencil, Plus } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 
-import { AddEquipmentKit } from '@/components/AddEquipmentKit';
 import { Header } from '@/components/Header';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import type { SessionUser } from '@/lib/session';
 import type { EquipmentKitOption } from '@/lib/specification';
 
@@ -120,17 +120,30 @@ export function EquipmentCatalogView({
         <section className='w-fit max-w-full overflow-x-auto rounded border border-neutral-200 bg-white p-3 dark:border-neutral-800 dark:bg-neutral-900'>
           <div className='mb-2 flex flex-wrap items-center gap-3'>
             <h2 className='text-sm font-semibold'>Типовые комплекты</h2>
-            {editable && editing && <AddEquipmentKit kinds={kinds} />}
+            {editable && editing && (
+              <Link
+                href='/equipment-catalog/new-kit'
+                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              >
+                <Plus />
+                Добавить комплект
+              </Link>
+            )}
           </div>
           {kits.length === 0 ? (
             <p className='text-sm text-neutral-500'>Комплектов пока нет</p>
           ) : (
-            <div className='flex flex-col gap-4'>
+            <div className='flex flex-col gap-3'>
               {kits.map((kit) => (
-                <div key={kit.name}>
-                  <h3 className='mb-1 text-sm font-medium'>{kit.name}</h3>
-                  <table className='border-collapse text-sm'>
-                    <thead className='bg-neutral-100 dark:bg-neutral-800'>
+                <article
+                  key={kit.name}
+                  className='overflow-hidden rounded-md border border-neutral-200 shadow-xs dark:border-neutral-700'
+                >
+                  <h3 className='border-b border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold dark:border-neutral-700 dark:bg-neutral-800/60'>
+                    {kit.name}
+                  </h3>
+                  <table className='w-full border-collapse text-sm'>
+                    <thead className='text-neutral-500 dark:text-neutral-400'>
                       <tr>
                         <th className='w-16 px-2 py-1 text-center font-medium'>
                           №
@@ -162,7 +175,7 @@ export function EquipmentCatalogView({
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </article>
               ))}
             </div>
           )}
