@@ -13,6 +13,7 @@ import type { EquipmentKitOption } from '@/lib/specification';
 type KindRow = {
   id: string;
   name: string;
+  unit: string;
   _count: { items: number };
   models: { id: string; name: string; _count: { items: number } }[];
 };
@@ -92,6 +93,9 @@ export function EquipmentCatalogView({
                   <th className='px-2 py-1 text-left font-medium'>
                     Марка / характеристика
                   </th>
+                  <th className='px-2 py-1 text-left font-medium'>
+                    Ед. изм.
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -137,6 +141,14 @@ export function EquipmentCatalogView({
                           '—'
                         )}
                       </td>
+                      {index === 0 && (
+                        <td
+                          className='px-2 py-1 align-top'
+                          rowSpan={rows.length}
+                        >
+                          {kind.unit}
+                        </td>
+                      )}
                     </tr>
                   ));
                 })}

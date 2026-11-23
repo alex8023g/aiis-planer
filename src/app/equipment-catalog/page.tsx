@@ -18,6 +18,7 @@ export default async function EquipmentCatalogPage() {
       select: {
         id: true,
         name: true,
+        unit: true,
         _count: { select: { items: true } },
         models: {
           orderBy: { name: 'asc' },
