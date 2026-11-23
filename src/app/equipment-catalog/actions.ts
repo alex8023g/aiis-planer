@@ -243,6 +243,107 @@ export async function addCatalogItem(
   return { ok: true };
 }
 
+export async function updateCatalogUnit(
+  kindId: string,
+  unit: string,
+): Promise<ActionResult> {
+  const user = await requireUser();
+  if (!canEdit(user)) {
+    return { ok: false, error: 'Только просмотр: менять справочник нельзя' };
+  }
+  if (typeof kindId !== 'string' || typeof unit !== 'string') {
+    return { ok: false, error: 'Неверные данные' };
+  }
+
+  const unitName = cleanEquipmentName(unit);
+  if (!unitName) return { ok: false, error: 'Укажите ед. изм.' };
+
+  const result = await prisma.equipmentKind.updateMany({
+    where: { id: kindId },
+    data: { unit: unitName },
+  });
+  if (result.count === 0) return { ok: false, error: 'Вид не найден' };
+
+  refresh();
+  return { ok: true };
+}
+
+export async function updateCatalogName(
+  kindId: string,
+  modelId: string,
+  name: string,
+): Promise<ActionResult> {
+  const user = await requireUser();
+  if (!canEdit(user)) {
+    return { ok: false, error: 'Только просмотр: менять справочник нельзя' };
+  }
+  if (
+    typeof kindId !== 'string' ||
+    typeof modelId !== 'string' ||
+    typeof name !== 'string'
+  ) {
+    return { ok: false, error: 'Неверные данные' };
+  }
+
+  const cleaned = cleanEquipmentName(name);
+  if (!cleaned) {
+    return { ok: false, error: modelId ? 'Укажите марку' : 'Укажите вид' };
+  }
+
+  const entries = modelId
+    ? await prisma.equipmentModel.findMany({
+        where: { kindId },
+        select: { id: true, name: true },
+      })
+    : await prisma.equipmentKind.findMany({
+        select: { id: true, name: true },
+      });
+  const targetId = modelId || kindId;
+  if (!entries.some((entry) => entry.id === targetId)) {
+    return { ok: false, error: modelId ? 'Марка не найдена' : 'Вид не найден' };
+  }
+  if (
+    entries.some(
+      (entry) =>
+        entry.id !== targetId &&
+        equipmentKey(entry.name) === equipmentKey(cleaned),
+    )
+  ) {
+    return {
+      ok: false,
+      error: modelId
+        ? 'Такая марка у этого вида уже есть'
+        : 'Такой вид уже есть',
+    };
+  }
+
+  try {
+    const result = modelId
+      ? await prisma.equipmentModel.updateMany({
+          where: { id: modelId, kindId },
+          data: { name: cleaned },
+        })
+      : await prisma.equipmentKind.updateMany({
+          where: { id: kindId },
+          data: { name: cleaned },
+        });
+    if (result.count === 0) {
+      return {
+        ok: false,
+        error: modelId ? 'Марка не найдена' : 'Вид не найден',
+      };
+    }
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      return { ok: false, error: 'Такое название уже есть в справочнике' };
+    }
+    throw error;
+  }
+
+  refresh();
+  return { ok: true };
+}
+
 export async function deleteCatalogItem(
   kindId: string,
   modelId: string,

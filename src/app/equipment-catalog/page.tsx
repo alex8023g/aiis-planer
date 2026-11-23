@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { canEdit, requireUser } from '@/lib/session';
+import { requireUser } from '@/lib/session';
 import { getEquipmentKits } from '@/lib/specification';
 
 import { EquipmentCatalogView } from './EquipmentCatalogView';
@@ -18,6 +18,7 @@ export default async function EquipmentCatalogPage() {
       select: {
         id: true,
         name: true,
+        unit: true,
         _count: { select: { items: true } },
         models: {
           orderBy: { name: 'asc' },
@@ -28,12 +29,5 @@ export default async function EquipmentCatalogPage() {
     getEquipmentKits(),
   ]);
 
-  return (
-    <EquipmentCatalogView
-      user={user}
-      kinds={kinds}
-      kits={kits}
-      editable={canEdit(user)}
-    />
-  );
+  return <EquipmentCatalogView user={user} kinds={kinds} kits={kits} />;
 }
