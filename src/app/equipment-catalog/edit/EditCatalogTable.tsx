@@ -2,7 +2,7 @@
 
 import { ArrowLeft, Check, Plus } from 'lucide-react';
 import Link from 'next/link';
-import { useState, useTransition, type SubmitEvent } from 'react';
+import { useId, useState, useTransition, type SubmitEvent } from 'react';
 
 import {
   addCatalogItem,
@@ -85,6 +85,7 @@ function CatalogFieldEditor({
 }
 
 export function EditCatalogTable({ kinds }: { kinds: Kind[] }) {
+  const addFormId = useId();
   const [kind, setKind] = useState('');
   const [model, setModel] = useState('');
   const [unit, setUnit] = useState('');
@@ -136,16 +137,13 @@ export function EditCatalogTable({ kinds }: { kinds: Kind[] }) {
         </thead>
         <tbody>
           <tr className='border-t border-neutral-200 dark:border-neutral-800'>
-            <td className={td} colSpan={4}>
-              <form
-                onSubmit={add}
-                className='flex flex-wrap items-center gap-2'
-              >
+            <td className={td}>
+              <form id={addFormId} onSubmit={add} className='pr-8'>
                 <Input
                   aria-label='Новый вид'
                   placeholder='Вид'
                   list='catalog-kinds'
-                  className='min-w-40 flex-1'
+                  className='min-w-40'
                   value={kind}
                   disabled={pending}
                   onChange={(event) => setKind(event.target.value)}
@@ -155,32 +153,44 @@ export function EditCatalogTable({ kinds }: { kinds: Kind[] }) {
                     <option key={item.id} value={item.name} />
                   ))}
                 </datalist>
+              </form>
+            </td>
+            <td className={td}>
+              <div className='pr-8'>
                 <Input
+                  form={addFormId}
                   aria-label='Новая марка'
                   placeholder='Марка / характеристика'
-                  className='min-w-40 flex-1'
+                  className='min-w-40'
                   value={model}
                   disabled={pending}
                   onChange={(event) => setModel(event.target.value)}
                 />
-                <Input
-                  aria-label='Ед. изм.'
-                  placeholder='Ед. изм.'
-                  className='w-24'
-                  value={existing ? existing.unit : unit}
-                  disabled={pending || !!existing}
-                  onChange={(event) => setUnit(event.target.value)}
-                />
-                <Button
-                  type='submit'
-                  variant='outline'
-                  size='icon-sm'
-                  aria-label='Добавить'
-                  disabled={pending || !kind.trim()}
-                >
-                  <Plus />
-                </Button>
-              </form>
+              </div>
+            </td>
+            <td className={td}>
+              <Input
+                form={addFormId}
+                aria-label='Ед. изм.'
+                placeholder='Ед. изм.'
+                className='w-24'
+                value={existing ? existing.unit : unit}
+                disabled={pending || !!existing}
+                onChange={(event) => setUnit(event.target.value)}
+              />
+            </td>
+            <td className='px-1 py-0.5 text-right'>
+              <Button
+                form={addFormId}
+                type='submit'
+                variant='outline'
+                size='sm'
+                aria-label='Добавить'
+                disabled={pending || !kind.trim()}
+              >
+                <Plus />
+                Добавить
+              </Button>
             </td>
           </tr>
         </tbody>
