@@ -98,7 +98,9 @@ function dictionaryWiring(modification: {
   }
 
   const currentTransformer = ratedCurrents.some(isRating);
-  const voltageTransformer = ratedVoltages.includes('transformer');
+  const voltageTransformer =
+    ratedVoltages.includes('transformer') &&
+    !ratedVoltages.includes('no-transformer');
 
   if (currentTransformer && voltageTransformer) return WiringScheme.indirect;
   if (currentTransformer || voltageTransformer) {
